@@ -1,0 +1,4 @@
+#Fri Jan 20 10:20:40 SGT 2017
+__DEFAULT__=false
+org.eclipse.help.ui.localSearch.master=true
+expression=register
