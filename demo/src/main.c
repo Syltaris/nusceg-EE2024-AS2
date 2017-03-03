@@ -299,9 +299,9 @@ int main (void) {
     pca9532_init();
     joystick_init();
     acc_init();
-    oled_init();
+    //oled_init();
     led7seg_init();
-
+    rgb_init();
 
 
     /*
@@ -331,11 +331,11 @@ int main (void) {
     moveBar(1, dir);
     oled_clearScreen(OLED_COLOR_BLACK);
 
-
-
     while (1)
     {
     	led7seg_setChar('1', 0);
+
+    	rgb_setLeds(RGB_BLUE | RGB_RED | RGB_GREEN);
 
         /* ####### Accelerometer and LEDs  ###### */
         /* # */

@@ -1,0 +1,90 @@
+/*****************************************************************************
+ *   GPIO Speaker & Tone Example
+ *
+ *   CK Tham, EE2024
+ *
+ ******************************************************************************/
+
+#include "lpc17xx_pinsel.h"
+#include "lpc17xx_gpio.h"
+#include "lpc17xx_timer.h"
+#include "rgb.h"
+#include "led7seg.h"
+
+int main (void) {
+
+	init_ssp();
+	led7seg_init();
+
+	unsigned int count = 0;
+	int monitor_symbols[]  = {1, 2, 3, 4, 5, 6 ,7 ,8 ,9 , 'A', 'B', 'C', 'D', 'E', 'F'};
+
+	start_7seg();
+
+
+}
+
+static void start_7seg(){
+
+    LPC_SC->PCONP |= (1<<2);					/* Power ON Timer1 */
+
+    LPC_TIM1->MCR  = (1<<0) | (1<<1);     		/* Clear COUNT on MR0 match and Generate Interrupt */
+    LPC_TIM1->PR   = 0;      					/* Update COUNT every (value + 1) clocks  */
+    LPC_TIM1->MR0  = 100000000;                 /* Value of COUNT that triggers interrupts */
+    LPC_TIM1->TCR  = (1 <<0);                   /* Start timer by setting the Counter Enable */
+
+    NVIC_EnableIRQ(TIMER1_IRQn);				/* Enable Timer1 interrupt */
+
+}
+
+void TIMER1_IRQHandler(void)
+{
+	unsigned int isrMask;
+
+    isrMask = LPC_TIM1->IR;
+    LPC_TIM1->IR = isrMask;         /* Clear the Interrupt Bit */
+
+    led7seg_setChar(monitor_symbols[count], 0);
+
+    count++;
+
+
+
+}
+
+static void init_ssp(void)
+{
+	SSP_CFG_Type SSP_ConfigStruct;
+	PINSEL_CFG_Type PinCfg;
+
+	/*
+	 * Initialize SPI pin connect
+	 * P0.7 - SCK;
+	 * P0.8 - MISO
+	 * P0.9 - MOSI
+	 * P2.2 - SSEL - used as GPIO
+	 */
+	PinCfg.Funcnum = 2;
+	PinCfg.OpenDrain = 0;
+	PinCfg.Pinmode = 0;
+	PinCfg.Portnum = 0;
+	PinCfg.Pinnum = 7;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Pinnum = 8;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Pinnum = 9;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Funcnum = 0;
+	PinCfg.Portnum = 2;
+	PinCfg.Pinnum = 2;
+	PINSEL_ConfigPin(&PinCfg);
+
+	SSP_ConfigStructInit(&SSP_ConfigStruct);
+
+	// Initialize SSP peripheral with parameter given in structure above
+	SSP_Init(LPC_SSP1, &SSP_ConfigStruct);
+
+	// Enable SSP peripheral
+	SSP_Cmd(LPC_SSP1, ENABLE);
+
+}

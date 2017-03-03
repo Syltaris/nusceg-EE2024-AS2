@@ -8,6 +8,7 @@
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_timer.h"
+#include "rgb.h"
 
 //#include "rgb.h"
 
@@ -150,10 +151,13 @@ int main (void) {
 
     init_GPIO();
 
+    rgb_init();
+
+    rgb_setLeds(RGB_BLUE);
+
     while (1)
     {
 
-    	btn1 = (GPIO_ReadValue(1) >> 31) & 0x01;
         if (btn1 == 0)
         {
             playSong(song);
