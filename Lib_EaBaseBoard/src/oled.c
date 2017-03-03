@@ -781,6 +781,7 @@ void oled_clearScreen(oled_color_t color)
     memset(shadowFB, c, SHADOW_FB_SIZE);
 }
 
+// fb == front, bg == background
 uint8_t oled_putChar(uint8_t x, uint8_t y, uint8_t ch, oled_color_t fb, oled_color_t bg)
 {
     unsigned char data = 0;

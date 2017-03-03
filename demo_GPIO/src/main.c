@@ -4,158 +4,196 @@
  *   CK Tham, EE2024
  *
  ******************************************************************************/
-
+#include "lpc17xx_ssp.h"
+#include "lpc17xx_i2c.h"
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_timer.h"
 
-//#include "rgb.h"
+#include "rgb.h"
+#include "led7seg.h"
+#include "acc.h"
+#include "oled.h"
 
-#define NOTE_PIN_HIGH() GPIO_SetValue(0, 1<<26);
-#define NOTE_PIN_LOW()  GPIO_ClearValue(0, 1<<26);
+static unsigned int count = 0;
+static int monitor_symbols[]  = {'0', '1', '2', '3', '4', '5', '6' ,'7' ,'8' ,'9' , 'A', 'B', 'C', 'D', 'E', 'F'};
+static int8_t x = 0;
+static int8_t y = 0;
+static int8_t z = 0;
+static int8_t xOff = 0;
+static int8_t yOff = 0;
+static int8_t zOff = 0;
 
-// Interval in us
-static uint32_t notes[] = {
-        2272, // A - 440 Hz
-        2024, // B - 494 Hz
-        3816, // C - 262 Hz
-        3401, // D - 294 Hz
-        3030, // E - 330 Hz
-        2865, // F - 349 Hz
-        2551, // G - 392 Hz
-        1136, // a - 880 Hz
-        1012, // b - 988 Hz
-        1912, // c - 523 Hz
-        1703, // d - 587 Hz
-        1517, // e - 659 Hz
-        1432, // f - 698 Hz
-        1275, // g - 784 Hz
-};
+typedef enum { false, true } bool;
+volatile bool sampleSensors = false;
 
-static void playNote(uint32_t note, uint32_t durationMs)
+void calibrateAccel();
+void init_oled();
+
+static void init_ssp(void)
 {
-    uint32_t t = 0;
-
-    if (note > 0) {
-        while (t < (durationMs*1000)) {
-            NOTE_PIN_HIGH();
-            Timer0_us_Wait(note/2); // us timer
-
-            NOTE_PIN_LOW();
-            Timer0_us_Wait(note/2);
-
-            t += note;
-        }
-    }
-    else {
-    	Timer0_Wait(durationMs); // ms timer
-    }
-}
-
-static uint32_t getNote(uint8_t ch)
-{
-    if (ch >= 'A' && ch <= 'G')
-        return notes[ch - 'A'];
-
-    if (ch >= 'a' && ch <= 'g')
-        return notes[ch - 'a' + 7];
-
-    return 0;
-}
-
-static uint32_t getDuration(uint8_t ch)
-{
-    if (ch < '0' || ch > '9')
-        return 400;
-    /* number of ms */
-    return (ch - '0') * 200;
-}
-
-static uint32_t getPause(uint8_t ch)
-{
-    switch (ch) {
-    case '+':
-        return 0;
-    case ',':
-        return 5;
-    case '.':
-        return 20;
-    case '_':
-        return 30;
-    default:
-        return 5;
-    }
-}
-
-static void playSong(uint8_t *song) {
-    uint32_t note = 0;
-    uint32_t dur  = 0;
-    uint32_t pause = 0;
-
-    /*
-     * A song is a collection of tones where each tone is
-     * a note, duration and pause, e.g.
-     *
-     * "E2,F4,"
-     */
-
-    while(*song != '\0') {
-        note = getNote(*song++);
-        if (*song == '\0')
-            break;
-        dur  = getDuration(*song++);
-        if (*song == '\0')
-            break;
-        pause = getPause(*song++);
-
-        playNote(note, dur);
-        Timer0_Wait(pause);
-    }
-}
-
-static uint8_t * song = (uint8_t*)"C1.C1,D2,C2,F2,E4,";
-
-static void init_GPIO(void)
-{
-	// Initialize button SW4 (not really necessary since default configuration)
+	SSP_CFG_Type SSP_ConfigStruct;
 	PINSEL_CFG_Type PinCfg;
-	PinCfg.Funcnum = 0;
+
+	/*
+	 * Initialize SPI pin connect
+	 * P0.7 - SCK;
+	 * P0.8 - MISO
+	 * P0.9 - MOSI
+	 * P2.2 - SSEL - used as GPIO
+	 */
+	PinCfg.Funcnum = 2;
 	PinCfg.OpenDrain = 0;
 	PinCfg.Pinmode = 0;
-	PinCfg.Portnum = 1;
-	PinCfg.Pinnum = 31;
+	PinCfg.Portnum = 0;
+	PinCfg.Pinnum = 7;
 	PINSEL_ConfigPin(&PinCfg);
-	GPIO_SetDir(1, 1<<31, 0);
+	PinCfg.Pinnum = 8;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Pinnum = 9;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Funcnum = 0;
+	PinCfg.Portnum = 2;
+	PinCfg.Pinnum = 2;
+	PINSEL_ConfigPin(&PinCfg);
 
-    /* ---- Speaker ------> */
-//    GPIO_SetDir(2, 1<<0, 1);
-//    GPIO_SetDir(2, 1<<1, 1);
+	SSP_ConfigStructInit(&SSP_ConfigStruct);
 
-    GPIO_SetDir(0, 1<<27, 1);
-    GPIO_SetDir(0, 1<<28, 1);
-    GPIO_SetDir(2, 1<<13, 1);
+	// Initialize SSP peripheral with parameter given in structure above
+	SSP_Init(LPC_SSP1, &SSP_ConfigStruct);
 
-    // Main tone signal : P0.26
-    GPIO_SetDir(0, 1<<26, 1);
+	// Enable SSP peripheral
+	SSP_Cmd(LPC_SSP1, ENABLE);
 
-    GPIO_ClearValue(0, 1<<27); //LM4811-clk
-    GPIO_ClearValue(0, 1<<28); //LM4811-up/dn
-    GPIO_ClearValue(2, 1<<13); //LM4811-shutdn
-    /* <---- Speaker ------ */
+}
+
+static void init_i2c(void)
+{
+	PINSEL_CFG_Type PinCfg;
+
+	/* Initialize I2C2 pin connect */
+	PinCfg.Funcnum = 2;
+	PinCfg.Pinnum = 10;
+	PinCfg.Portnum = 0;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Pinnum = 11;
+	PINSEL_ConfigPin(&PinCfg);
+
+	// Initialize I2C peripheral
+	I2C_Init(LPC_I2C2, 100000);
+
+	/* Enable I2C1 operation */
+	I2C_Cmd(LPC_I2C2, ENABLE);
+}
+
+static void start_7seg(){
+
+	// default value of PCLK = CCLK/4
+	// CCLK is derived from PLL0 output signal / (CCLKSEL + 1) [CCLKCFG register]
+
+    LPC_SC->PCONP |= (1<<2);					/* Power ON Timer1 */
+
+    LPC_TIM1->MCR  = (1<<0) | (1<<1);     		/* Clear COUNT on MR0 match and Generate Interrupt */
+    LPC_TIM1->PR   = 0;      					/* Update COUNT every (value + 1) of PCLK  */
+    LPC_TIM1->MR0  = 40000000;                 /* Value of COUNT that triggers interrupts */
+    LPC_TIM1->TCR  = (1 <<0);                   /* Start timer by setting the Counter Enable */
+
+    NVIC_EnableIRQ(TIMER1_IRQn);				/* Enable Timer1 interrupt */
+
 }
 
 int main (void) {
 
-    uint8_t btn1 = 1;
+	init_ssp();
+	init_i2c();
 
-    init_GPIO();
+	led7seg_init();
+	acc_init();
+	oled_init();
 
-    while (1)
-    {
+	start_7seg();
 
-        if (btn1 == 0)
-        {
-            playSong(song);
-        }
-    }
+	// Enable GPIO Interrupt P2.10
+	LPC_GPIOINT->IO2IntEnF |= 1<<10;
+
+	// Enable EINT3 interrupt
+	NVIC_EnableIRQ(EINT3_IRQn);
+
+	calibrateAccel();
+
+	acc_read(&x, &y, &z);
+	int initX = x;
+	int initY = y;
+//	int initZ = z;
+
+	int posX = 48;
+	int posY = 32;
+
+	init_oled();
+
+	while (1){
+		acc_read(&x, &y, &z);
+
+		if (x > initX + 5)
+			posX--;
+		if (x < initX - 5)
+			posX++;
+		if (y > initY + 5)
+			posY++;
+		if (y < initY - 5)
+			posY--;
+
+		posX = posX % 96;
+		posY = posY % 64;
+		if (posX < 0)
+			posX = 96;
+		if (posY < 0)
+			posY = 64;
+
+		oled_putPixel(posX,posY,OLED_COLOR_WHITE);
+	}
+
+}
+
+
+void TIMER1_IRQHandler(void)
+{
+	unsigned int isrMask;
+
+    isrMask = LPC_TIM1->IR;
+    LPC_TIM1->IR = isrMask;         /* Clear the Interrupt Bit */
+
+    led7seg_setChar(monitor_symbols[count], 0);
+
+    if (count == 5 || count == 10 || count == 15)
+    	sampleSensors = true;
+
+    count = (count + 1) % 16;
+
+}
+
+void EINT3_IRQHandler(void)
+{
+	// Determine whether GPIO Interrupt P2.10 has occurred
+	if ((LPC_GPIOINT->IO2IntStatF>>10)& 0x1)
+	{
+		oled_clearScreen(OLED_COLOR_BLACK);
+
+        // Clear GPIO Interrupt P2.10
+        LPC_GPIOINT->IO2IntClr = 1<<10;
+	}
+}
+
+void calibrateAccel(){
+	acc_read(&x, &y, &z);
+	xOff = 0-x;
+	yOff = 0-y;
+	zOff = 64-z;
+}
+
+void init_oled(){
+	oled_clearScreen(OLED_COLOR_BLACK);
+	oled_putString(0,20,"Tempe: ",OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(0,30,"Light: ",OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(0,40,"Accel: ",OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 }
