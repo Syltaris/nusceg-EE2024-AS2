@@ -146,7 +146,7 @@ void pca9532_init (void)
  *                    called.
  *
  *                    FALSE if the state should be retrieved from the PCA9532
- *                    device. A blinkin LED may be reported as on or off
+ *                    device. A blinking LED may be reported as on or off
  *                    depending on the state when calling the function.
  *
  * Returns:
