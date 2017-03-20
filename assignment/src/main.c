@@ -1,10 +1,4 @@
-/*****************************************************************************
- *   A demo example using several of the peripherals on the base board
- *
- *   Copyright(C) 2011, EE2024
- *   All rights reserved.
- *
- ******************************************************************************/
+#include "stdio.h"
 
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
@@ -18,8 +12,45 @@
 #include "oled.h"
 #include "rgb.h"
 #include "led7seg.h"
+#include "light.h"
+#include "temp.h"
 
-static void init_i2c(void)
+
+
+/* LED params */
+static uint8_t set = 0;
+static uint8_t ledRed_mask = RGB_RED;
+static uint32_t led_set = 0x0001;
+
+static volatile int RED_LED_FLAG = 0;
+static volatile int LED_ARRAY_FLAG = 0;
+static int LED_MOV_DIR = 0; // 0 for <<, 1 for >>
+
+
+
+/* 7-segment display params */
+volatile int SSEG_FLAG = 0;
+unsigned int sseg_count = 0;
+int monitor_symbols[]  = {'0', '1', '2', '3', '4', '5', '6' ,'7' ,'8' ,'9' ,'A', 'B', 'C', 'D', 'E', 'F'};
+
+
+
+/* ISL290003 light sensor params */
+uint32_t light_reading = 0;
+
+
+
+/* OLED params */
+volatile int SET_MONITOR_OLED_FLAG = 1;
+
+
+
+/* stable, monitor mode flag */
+volatile int MODE_FLAG = 0; //1 - monitor, 0 - passive
+
+
+
+static void init_I2C2(void)
 {
 	PINSEL_CFG_Type PinCfg;
 
@@ -31,13 +62,51 @@ static void init_i2c(void)
 	PinCfg.Pinnum = 11;
 	PINSEL_ConfigPin(&PinCfg);
 
-	// Initialize I2C peripheral
+	// Initialize I2C2 peripheral
 	I2C_Init(LPC_I2C2, 100000);
 
-	/* Enable I2C1 operation */
+	/* Enable I2C2 operation */
 	I2C_Cmd(LPC_I2C2, ENABLE);
 }
 
+//ssp enabler
+static void init_SSP(void)
+{
+	SSP_CFG_Type SSP_ConfigStruct;
+	PINSEL_CFG_Type PinCfg;
+
+	/*
+	 * Initialize SPI pin connect
+	 * P0.7 - SCK;
+	 * P0.8 - MISO
+	 * P0.9 - MOSI
+	 * P2.2 - SSEL - used as GPIO
+	 */
+	PinCfg.Funcnum = 2;
+	PinCfg.OpenDrain = 0;
+	PinCfg.Pinmode = 0;
+	PinCfg.Portnum = 0;
+	PinCfg.Pinnum = 7;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Pinnum = 8;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Pinnum = 9;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Funcnum = 0;
+	PinCfg.Portnum = 2;
+	PinCfg.Pinnum = 2;
+	PINSEL_ConfigPin(&PinCfg);
+
+	SSP_ConfigStructInit(&SSP_ConfigStruct);
+
+	// Initialize SSP peripheral with parameter given in structure above
+	SSP_Init(LPC_SSP1, &SSP_ConfigStruct);
+
+	// Enable SSP peripheral
+	SSP_Cmd(LPC_SSP1, ENABLE);
+}
+
+//timer1 w/ 2s period
 static void init_timer1(){
 
 	// default value of PCLK = CCLK/4
@@ -47,40 +116,153 @@ static void init_timer1(){
 
     LPC_TIM1->MCR  = (1<<0) | (1<<1);     		/* Clear COUNT on MR0 match and Generate Interrupt */
     LPC_TIM1->PR   = 0;      					/* Update COUNT every (value + 1) of PCLK  */
-    LPC_TIM1->MR0  = 40000000;                 	/* Value of COUNT that triggers interrupts */
+    LPC_TIM1->MR0  = 20000000;                 	/* Value of COUNT that triggers interrupts */
     LPC_TIM1->TCR  = (1 << 0);                 	/* Start timer by setting the Counter Enable */
 
     NVIC_EnableIRQ(TIMER1_IRQn);				/* Enable Timer1 interrupt */
 
 }
 
-uint8_t set = 0;
+//timer2 w/ 4s period
+static void init_timer2(){
 
-volatile uint8_t led_mask = 0;
+	// default value of PCLK = CCLK/4
+	// CCLK is derived from PLL0 output signal / (CCLKSEL + 1) [CCLKCFG register]
+
+    LPC_SC->PCONP |= (1<<22);					/* Power ON Timer2 */
+
+    LPC_TIM2->MCR  = (1<<0) | (1<<1);     		/* Clear COUNT on MR0 match and Generate Interrupt */
+    LPC_TIM2->PR   = 0;      					/* Update COUNT every (value + 1) of PCLK  */
+    LPC_TIM2->MR0  = 40000000;                 	/* Value of COUNT that triggers interrupts */
+    LPC_TIM2->TCR  = (1 << 0);                 	/* Start timer by setting the Counter Enable */
+
+    NVIC_EnableIRQ(TIMER2_IRQn);				/* Enable Timer2 interrupt */
+
+}
 
 void TIMER1_IRQHandler(void)
 {
 	unsigned int isrMask;
 
     isrMask = LPC_TIM1->IR;
-    LPC_TIM1->IR = isrMask;         /* Clear the Interrupt Bit by writing to the register */
+    LPC_TIM1->IR = isrMask;         /* Clear the Interrupt Bit by writing to the register */					// bitwise not
 
-    rgb_setLeds(led_mask & set); 	// bitwise and
-    set = ~set; 					// bitwise not
+    RED_LED_FLAG = 1;
+    LED_ARRAY_FLAG = 1;
+}
 
+void TIMER2_IRQHandler(void)
+{
+	unsigned int isrMask;
+
+    isrMask = LPC_TIM2->IR;
+    LPC_TIM2->IR = isrMask;         /* Clear the Interrupt Bit by writing to the register */					// bitwise not
+
+    SSEG_FLAG = 1;
+}
+
+// EINT3 Interrupt Handler
+void EINT3_IRQHandler(void)
+{
+	// Determine whether GPIO Interrupt P2.10 has occurred
+	if ((LPC_GPIOINT->IO2IntStatF>>10)& 0x1)
+	{
+		MODE_FLAG = !MODE_FLAG; // ready to put device into monitor mode
+
+        // Clear GPIO Interrupt P2.10
+        LPC_GPIOINT->IO2IntClr = 1<<10;
+	}
 }
 
 int main (void) {
+	//protocol init
+	init_I2C2();
+	init_SSP();
 
-	init_i2c();
-	pca9532_init();
+	//GPIO devices init
+	pca9532_init(); //port expander for led array
+	rgb_init(); 	//rgb led
 
-	init_timer1();
-	rgb_init();
+	//SSP/GPIO devices init
+	led7seg_init(); //seven-segment display
+	oled_init(); //OLED display module
 
-	pca9532_setLeds(0x0000, 0xFFFF);
+	//I2C sensors init
+	light_init(); //light sensor module
+	acc_init(); //accelerometer sensor
+//	temp_init(); //temperature sensor
 
+	//interrupts init
+	init_timer1(); //2s period clock
+	init_timer2(); //4s period clock
+    LPC_GPIOINT->IO2IntEnF |= 1<<10;     // Enable GPIO Interrupt P2.10 (SW3)
+
+    NVIC_EnableIRQ(EINT3_IRQn);     // Enable EINT3 interrupt
+
+
+	//hardware setup
+	light_enable(); //enable light sensor
+	oled_clearScreen(OLED_COLOR_BLACK);
+
+
+	//round robin w/interrupts for RGB, LED array, SSEG
+	while(1) {
+		//stable,stable mode
+		if(MODE_FLAG == 0) {
+			//off everything
+			oled_clearScreen(OLED_COLOR_BLACK);
+		    led7seg_setChar(0x00 , 0);
+			rgb_setLeds(ledRed_mask & 0x00);
+
+
+			SET_MONITOR_OLED_FLAG = 1; //write MONITOR to OLED later
+
+
+			while(MODE_FLAG == 0); //wait for MONITOR to be enabled
+		}
+		//init: write MONITOR to OLED once
+		if(SET_MONITOR_OLED_FLAG) {
+			oled_putString(1, 1, "MODE: MONITOR", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			SET_MONITOR_OLED_FLAG = 0;
+		}
+
+
+
+		//ISR tasks
+		if(RED_LED_FLAG && MODE_FLAG) {
+		    rgb_setLeds(ledRed_mask & set); 	// bitwise and
+		    set = ~set;
+
+		    RED_LED_FLAG = 0;
+		}
+
+		if(LED_ARRAY_FLAG && MODE_FLAG) {
+			pca9532_setLeds(led_set, 0xFFFF);  //moves onLed down array
+			led_set = LED_MOV_DIR ? led_set >> 1 : led_set << 1;
+
+			//changes direction when at the ends
+			if(led_set == 0x0001) {
+				LED_MOV_DIR = 0;
+			} else if(led_set == 0x8000) {
+				LED_MOV_DIR = 1;
+			}
+			LED_ARRAY_FLAG = 0;
+		}
+
+		if(SSEG_FLAG && MODE_FLAG) {
+		    led7seg_setChar(monitor_symbols[sseg_count++], 0);
+		    sseg_count %= 16;
+
+		    SSEG_FLAG = 0;
+		}
+
+		//main tasks
+		light_reading = light_read();
+	}
+
+	return 0;
 }
+
 
 
 
