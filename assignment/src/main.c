@@ -39,6 +39,10 @@ int monitor_symbols[]  = {'0', '1', '2', '3', '4', '5', '6' ,'7' ,'8' ,'9' ,'A',
 uint32_t light_reading = 0;
 
 
+/* MMA7455 Accelerometer sensor params */
+volatile int8_t accX, accY, accZ;
+int8_t accInitX, accInitY, accInitZ;
+
 
 /* OLED params */
 volatile int SET_MONITOR_OLED_FLAG = 1;
@@ -47,6 +51,10 @@ volatile int SET_MONITOR_OLED_FLAG = 1;
 
 /* stable, monitor mode flag */
 volatile int MODE_FLAG = 0; //1 - monitor, 0 - passive
+
+/* flag to sample light and accelerometer sensors */
+volatile int SAMPLE_SENSORS_FLAG = 0;
+char tempStr[80];
 
 
 
@@ -133,7 +141,7 @@ static void init_timer2(){
 
     LPC_TIM2->MCR  = (1<<0) | (1<<1);     		/* Clear COUNT on MR0 match and Generate Interrupt */
     LPC_TIM2->PR   = 0;      					/* Update COUNT every (value + 1) of PCLK  */
-    LPC_TIM2->MR0  = 40000000;                 	/* Value of COUNT that triggers interrupts */
+    LPC_TIM2->MR0  = 26666666;                 	/* Value of COUNT that triggers interrupts */
     LPC_TIM2->TCR  = (1 << 0);                 	/* Start timer by setting the Counter Enable */
 
     NVIC_EnableIRQ(TIMER2_IRQn);				/* Enable Timer2 interrupt */
@@ -159,6 +167,10 @@ void TIMER2_IRQHandler(void)
     LPC_TIM2->IR = isrMask;         /* Clear the Interrupt Bit by writing to the register */					// bitwise not
 
     SSEG_FLAG = 1;
+
+    if(sseg_count == 5 || sseg_count == 10 || sseg_count == 15) {
+    	SAMPLE_SENSORS_FLAG = 1;
+    }
 }
 
 // EINT3 Interrupt Handler
@@ -182,6 +194,7 @@ int main (void) {
 	//GPIO devices init
 	pca9532_init(); //port expander for led array
 	rgb_init(); 	//rgb led
+//	temp_init(); //temperature sensor
 
 	//SSP/GPIO devices init
 	led7seg_init(); //seven-segment display
@@ -190,7 +203,6 @@ int main (void) {
 	//I2C sensors init
 	light_init(); //light sensor module
 	acc_init(); //accelerometer sensor
-//	temp_init(); //temperature sensor
 
 	//interrupts init
 	init_timer1(); //2s period clock
@@ -202,27 +214,52 @@ int main (void) {
 
 	//hardware setup
 	light_enable(); //enable light sensor
-	oled_clearScreen(OLED_COLOR_BLACK);
+	oled_clearScreen(OLED_COLOR_BLACK); //clear oled
+	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
 
 
 	//round robin w/interrupts for RGB, LED array, SSEG
 	while(1) {
 		//stable,stable mode
 		if(MODE_FLAG == 0) {
+
 			//off everything
 			oled_clearScreen(OLED_COLOR_BLACK);
-		    led7seg_setChar(0x00 , 0);
+
+			led7seg_setChar(0x00 , 0);
+		    sseg_count = 0;
+
 			rgb_setLeds(ledRed_mask & 0x00);
 
+			//reset clocks
+			LPC_TIM1->TCR = (1 << 1);
+			LPC_TIM2->TCR = (1 << 1);
+			//disable timers
+			LPC_TIM1->TCR = (0 << 0);
+			LPC_TIM2->TCR = (0 << 0);
 
 			SET_MONITOR_OLED_FLAG = 1; //write MONITOR to OLED later
 
 
+
 			while(MODE_FLAG == 0); //wait for MONITOR to be enabled
+
+
+
+			//un-reset clocks
+			LPC_TIM1->TCR = (0 << 1);
+			LPC_TIM2->TCR = (0 << 1);
+			//re-enable
+			init_timer1();
+			init_timer2();
 		}
-		//init: write MONITOR to OLED once
+		//init: write MONITOR to OLED once, write LUX:
 		if(SET_MONITOR_OLED_FLAG) {
 			oled_putString(1, 1, "MODE: MONITOR", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 10, "LUX : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 20, "TEMP: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 30, "ACC : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
 			SET_MONITOR_OLED_FLAG = 0;
 		}
 
@@ -257,7 +294,22 @@ int main (void) {
 		}
 
 		//main tasks
-		light_reading = light_read();
+		if(SAMPLE_SENSORS_FLAG) {
+			//poll light sensor
+			light_reading = light_read();
+
+			//poll acc sensor
+			acc_read(&accX, &accY, &accZ);
+
+			//update OLED
+			sprintf(tempStr, "LUX :%lu", light_reading);
+			oled_putString(1, 10, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			sprintf(tempStr, "ACC :%d|%d|%d     ", accX-accInitX, accY-accInitY, accZ-accInitZ);
+			oled_putString(1, 30, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
+
+			SAMPLE_SENSORS_FLAG = 0;
+		}
 	}
 
 	return 0;
