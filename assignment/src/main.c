@@ -26,6 +26,8 @@ static volatile int RED_LED_FLAG = 0;
 static volatile int LED_ARRAY_FLAG = 0;
 static int LED_MOV_DIR = 0; // 0 for <<, 1 for >>
 
+/* timer params */
+volatile uint32_t msTicks = 0; // counter for 1ms SysTicks
 
 
 /* 7-segment display params */
@@ -39,9 +41,12 @@ int monitor_symbols[]  = {'0', '1', '2', '3', '4', '5', '6' ,'7' ,'8' ,'9' ,'A',
 uint32_t light_reading = 0;
 
 
-/* MMA7455 Accelerometer sensor params */
+/* MMA7455 accelerometer sensor params */
 volatile int8_t accX, accY, accZ;
 int8_t accInitX, accInitY, accInitZ;
+
+/* temperature sensor */
+int32_t temperature_reading = 0;
 
 
 /* OLED params */
@@ -186,7 +191,21 @@ void EINT3_IRQHandler(void)
 	}
 }
 
+
+
+/* SysTick helper functions */
+void SysTick_Handler(void) {
+	msTicks++;
+}
+
+uint32_t getTicks(void) {
+	return msTicks;
+}
+
 int main (void) {
+	//SysTick init
+	SysTick_Config(SystemCoreClock/1000);
+
 	//protocol init
 	init_I2C2();
 	init_SSP();
@@ -194,7 +213,7 @@ int main (void) {
 	//GPIO devices init
 	pca9532_init(); //port expander for led array
 	rgb_init(); 	//rgb led
-//	temp_init(); //temperature sensor
+	temp_init(getTicks); //temperature sensor
 
 	//SSP/GPIO devices init
 	led7seg_init(); //seven-segment display
@@ -301,12 +320,18 @@ int main (void) {
 			//poll acc sensor
 			acc_read(&accX, &accY, &accZ);
 
+			//poll temp sensor
+			temperature_reading = temp_read();
+
+
+
 			//update OLED
 			sprintf(tempStr, "LUX :%lu", light_reading);
 			oled_putString(1, 10, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			sprintf(tempStr, "TEMP:%.2f", temperature_reading/10.0);
+			oled_putString(1, 20, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 			sprintf(tempStr, "ACC :%d|%d|%d     ", accX-accInitX, accY-accInitY, accZ-accInitZ);
 			oled_putString(1, 30, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-
 
 			SAMPLE_SENSORS_FLAG = 0;
 		}
