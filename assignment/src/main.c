@@ -17,52 +17,56 @@
 
 
 
-/* LED params */
-static uint8_t set = 0;
+/*** LED params ***/
+static uint8_t ledRed_set = 0;
 static uint8_t ledRed_mask = RGB_RED;
-static uint32_t led_set = 0x0001;
+static uint8_t ledBlue_set = 0;
+static uint8_t ledBlue_mask = RGB_BLUE;
 
-static volatile int RED_LED_FLAG = 0;
-static volatile int LED_ARRAY_FLAG = 0;
-static int LED_MOV_DIR = 0; // 0 for <<, 1 for >>
+static uint32_t led_set = 0x0001; //for array
 
-/* timer params */
+static volatile int red_led_flag = 0;
+static volatile int led_array_flag = 0;
+static int led_mov_dir = 0; // 0 for <<, 1 for >>
+
+/*** timer params ***/
 volatile uint32_t msTicks = 0; // counter for 1ms SysTicks
 
-
-/* 7-segment display params */
-volatile int SSEG_FLAG = 0;
+/*** 7-segment display params ***/
+volatile int sseg_flag = 0;
 unsigned int sseg_count = 0;
 int monitor_symbols[]  = {'0', '1', '2', '3', '4', '5', '6' ,'7' ,'8' ,'9' ,'A', 'B', 'C', 'D', 'E', 'F'};
 
-
-
-/* ISL290003 light sensor params */
+/*** ISL290003 light sensor params ***/
 uint32_t light_reading = 0;
+volatile int light_low_flag = 0;
 
-
-/* MMA7455 accelerometer sensor params */
+/*** MMA7455 accelerometer sensor params ***/
+int8_t accInitX, accInitY, accInitZ; //for offsetting
 volatile int8_t accX, accY, accZ;
-int8_t accInitX, accInitY, accInitZ;
+int8_t accOldX, accOldY, accOldZ;
 
-/* temperature sensor */
+/*** temperature sensor ***/
 int32_t temperature_reading = 0;
+const int32_t TEMP_HIGH_WARNING = 450;
+int temp_high_flag = 0;
 
+/*** stable, monitor mode flag ***/
+volatile int mode_flag = 0; //1 - monitor, 0 - passive
 
-/* OLED params */
-volatile int SET_MONITOR_OLED_FLAG = 1;
+/*** flag to sample light and accelerometer sensors ***/
+volatile int sample_sensors_flag = 0;
 
-
-
-/* stable, monitor mode flag */
-volatile int MODE_FLAG = 0; //1 - monitor, 0 - passive
-
-/* flag to sample light and accelerometer sensors */
-volatile int SAMPLE_SENSORS_FLAG = 0;
+/*** OLED params ***/
 char tempStr[80];
 
 
 
+
+
+/*** protocols initialisers ***/
+
+//i2c enabler
 static void init_I2C2(void)
 {
 	PINSEL_CFG_Type PinCfg;
@@ -119,7 +123,7 @@ static void init_SSP(void)
 	SSP_Cmd(LPC_SSP1, ENABLE);
 }
 
-//timer1 w/ 2s period
+//timer1 w/ 2s(?) period
 static void init_timer1(){
 
 	// default value of PCLK = CCLK/4
@@ -136,7 +140,7 @@ static void init_timer1(){
 
 }
 
-//timer2 w/ 4s period
+//timer2 w/ 1s~ period
 static void init_timer2(){
 
 	// default value of PCLK = CCLK/4
@@ -160,10 +164,12 @@ void TIMER1_IRQHandler(void)
     isrMask = LPC_TIM1->IR;
     LPC_TIM1->IR = isrMask;         /* Clear the Interrupt Bit by writing to the register */					// bitwise not
 
-    RED_LED_FLAG = 1;
-    LED_ARRAY_FLAG = 1;
+    rgbLED_controller();
+
+    led_array_flag = 1;
 }
 
+void sseg_controller(void);
 void TIMER2_IRQHandler(void)
 {
 	unsigned int isrMask;
@@ -171,11 +177,12 @@ void TIMER2_IRQHandler(void)
     isrMask = LPC_TIM2->IR;
     LPC_TIM2->IR = isrMask;         /* Clear the Interrupt Bit by writing to the register */					// bitwise not
 
-    SSEG_FLAG = 1;
+    sseg_flag = 1;
 
     if(sseg_count == 5 || sseg_count == 10 || sseg_count == 15) {
-    	SAMPLE_SENSORS_FLAG = 1;
+    	sample_sensors_flag = 1;
     }
+	sseg_controller(); // ! may be slow
 }
 
 // EINT3 Interrupt Handler
@@ -184,7 +191,7 @@ void EINT3_IRQHandler(void)
 	// Determine whether GPIO Interrupt P2.10 has occurred
 	if ((LPC_GPIOINT->IO2IntStatF>>10)& 0x1)
 	{
-		MODE_FLAG = !MODE_FLAG; // ready to put device into monitor mode
+		mode_flag = !mode_flag; // ready to put device into monitor mode
 
         // Clear GPIO Interrupt P2.10
         LPC_GPIOINT->IO2IntClr = 1<<10;
@@ -193,7 +200,7 @@ void EINT3_IRQHandler(void)
 
 
 
-/* SysTick helper functions */
+/*** SysTick helper functions ***/
 void SysTick_Handler(void) {
 	msTicks++;
 }
@@ -202,138 +209,179 @@ uint32_t getTicks(void) {
 	return msTicks;
 }
 
+
+
+//protocol init
+void init_protocols() {
+	//protocol init
+	init_I2C2();
+	init_SSP();
+}
+
+//sensors, peripherals init
+void init_peripherals() {
+	//GPIO devices init
+	pca9532_init(); //port expander for led array
+	rgb_init(); //rgb led
+	temp_init(getTicks); //temperature sensor
+	//SSP/GPIO devices init
+	led7seg_init(); //seven-segment display
+	oled_init(); //OLED display module
+	//I2C sensors init
+	light_init(); //light sensor module
+	acc_init(); //accelerometer sensor
+}
+
+//interrupts init
+void init_interrupts() {
+	//interrupts init
+	init_timer1(); //2s period clock
+	init_timer2(); //4s period clock
+	LPC_GPIOINT ->IO2IntEnF |= 1 << 10;
+	NVIC_EnableIRQ(EINT3_IRQn); // Enable EINT3 interrupt
+}
+
+//reset devices and disable timers
+void prep_passiveMode(void) {
+	//off everything
+	oled_clearScreen(OLED_COLOR_BLACK); //clear OLED
+	led7seg_setChar(0x00, 0);			//off 7 segment
+	sseg_count = 0;						//reset 7 segment counter
+	rgb_setLeds(ledRed_mask & 0x00);	//off RGB led
+
+	//reset clocks
+	LPC_TIM1 ->TCR = (1 << 1);
+	LPC_TIM2 ->TCR = (1 << 1);
+	//disable timers
+	LPC_TIM1 ->TCR = (0 << 0);
+	LPC_TIM2 ->TCR = (0 << 0);
+
+	//reset flags
+	temp_high_flag = 0;
+	light_low_flag = 0;
+}
+
+//re-enable timers
+void prep_monitorMode(void) {
+	//un-reset clocks
+	LPC_TIM1 ->TCR = (0 << 1);
+	LPC_TIM2 ->TCR = (0 << 1);
+	//re-enable
+	init_timer1();
+	init_timer2();
+
+	monitor_oled_init();
+}
+
+//sets the sseg to the corresponding symbol
+void sseg_controller(void) {
+	led7seg_setChar(monitor_symbols[sseg_count++], 0);
+	sseg_count %= 16;
+}
+
+//toggles LEDs
+void rgbLED_controller(void) {
+	if(temp_high_flag) {
+		ledRed_set = ~ledRed_set;
+	} else {
+		ledRed_set = 0;
+	}
+
+	if(light_low_flag) {
+		ledBlue_set = ~ledBlue_set;
+	} else {
+		ledBlue_set = 0;
+	}
+
+	rgb_setLeds(ledRed_mask & ledRed_set
+				| ledBlue_mask & ledBlue_set);
+}
+
+//sample the accelerometer, light, temperature sensors
+void sample_sensors(void) {
+	//poll light sensor
+	light_reading = light_read();
+	//poll acc sensor
+	acc_read(&accX, &accY, &accZ);
+	//poll temp sensor
+	temperature_reading = temp_read();
+}
+
+
+
+/*** OLED functions for monitor mode ***/
+
+//prints empty labels and 'monitor' on oled
+void monitor_oled_init(void) {
+	oled_putString(1, 1, "MODE: MONITOR", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(1, 10, "LUX : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(1, 20, "TEMP: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(1, 30, "ACC : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+}
+
+//update sampled data on oled
+void monitor_oled_sensors(void) {
+	//update OLED
+	sprintf(tempStr, "LUX :%lu", light_reading);
+	oled_putString(1, 10, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	sprintf(tempStr, "TEMP:%.2f", temperature_reading / 10.0);
+	oled_putString(1, 20, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	sprintf(tempStr, "ACC :%d|%d|%d     ", accX - accInitX, accY - accInitY,
+			accZ - accInitZ);
+	oled_putString(1, 30, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+}
+
 int main (void) {
 	//SysTick init
 	SysTick_Config(SystemCoreClock/1000);
 
-	//protocol init
-	init_I2C2();
-	init_SSP();
-
-	//GPIO devices init
-	pca9532_init(); //port expander for led array
-	rgb_init(); 	//rgb led
-	temp_init(getTicks); //temperature sensor
-
-	//SSP/GPIO devices init
-	led7seg_init(); //seven-segment display
-	oled_init(); //OLED display module
-
-	//I2C sensors init
-	light_init(); //light sensor module
-	acc_init(); //accelerometer sensor
-
-	//interrupts init
-	init_timer1(); //2s period clock
-	init_timer2(); //4s period clock
-    LPC_GPIOINT->IO2IntEnF |= 1<<10;     // Enable GPIO Interrupt P2.10 (SW3)
-
-    NVIC_EnableIRQ(EINT3_IRQn);     // Enable EINT3 interrupt
-
+	init_protocols();
+	init_peripherals();
+	init_interrupts();
 
 	//hardware setup
 	light_enable(); //enable light sensor
 	oled_clearScreen(OLED_COLOR_BLACK); //clear oled
 	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
 
-
-	//round robin w/interrupts for RGB, LED array, SSEG
+	//main execution loop
 	while(1) {
-		//stable,stable mode
-		if(MODE_FLAG == 0) {
-
-			//off everything
-			oled_clearScreen(OLED_COLOR_BLACK);
-
-			led7seg_setChar(0x00 , 0);
-		    sseg_count = 0;
-
-			rgb_setLeds(ledRed_mask & 0x00);
-
-			//reset clocks
-			LPC_TIM1->TCR = (1 << 1);
-			LPC_TIM2->TCR = (1 << 1);
-			//disable timers
-			LPC_TIM1->TCR = (0 << 0);
-			LPC_TIM2->TCR = (0 << 0);
-
-			SET_MONITOR_OLED_FLAG = 1; //write MONITOR to OLED later
-
-
-
-			while(MODE_FLAG == 0); //wait for MONITOR to be enabled
-
-
-
-			//un-reset clocks
-			LPC_TIM1->TCR = (0 << 1);
-			LPC_TIM2->TCR = (0 << 1);
-			//re-enable
-			init_timer1();
-			init_timer2();
-		}
-		//init: write MONITOR to OLED once, write LUX:
-		if(SET_MONITOR_OLED_FLAG) {
-			oled_putString(1, 1, "MODE: MONITOR", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 10, "LUX : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 20, "TEMP: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 30, "ACC : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-
-			SET_MONITOR_OLED_FLAG = 0;
+		//stable, passive mode
+		if(mode_flag == 0) {
+			prep_passiveMode();
+			while(mode_flag == 0); //wait for MONITOR to be enabled
+			prep_monitorMode();
 		}
 
 
-
-		//ISR tasks
-		if(RED_LED_FLAG && MODE_FLAG) {
-		    rgb_setLeds(ledRed_mask & set); 	// bitwise and
-		    set = ~set;
-
-		    RED_LED_FLAG = 0;
-		}
-
-		if(LED_ARRAY_FLAG && MODE_FLAG) {
+		if(led_array_flag && mode_flag) {
 			pca9532_setLeds(led_set, 0xFFFF);  //moves onLed down array
-			led_set = LED_MOV_DIR ? led_set >> 1 : led_set << 1;
+			led_set = led_mov_dir ? led_set >> 1 : led_set << 1;
 
 			//changes direction when at the ends
 			if(led_set == 0x0001) {
-				LED_MOV_DIR = 0;
+				led_mov_dir = 0;
 			} else if(led_set == 0x8000) {
-				LED_MOV_DIR = 1;
+				led_mov_dir = 1;
 			}
-			LED_ARRAY_FLAG = 0;
-		}
-
-		if(SSEG_FLAG && MODE_FLAG) {
-		    led7seg_setChar(monitor_symbols[sseg_count++], 0);
-		    sseg_count %= 16;
-
-		    SSEG_FLAG = 0;
+			led_array_flag = 0;
 		}
 
 		//main tasks
-		if(SAMPLE_SENSORS_FLAG) {
-			//poll light sensor
-			light_reading = light_read();
+		if(sample_sensors_flag) {
+			sample_sensors();
+			monitor_oled_sensors();
+			sample_sensors_flag = 0;
+		}
 
-			//poll acc sensor
-			acc_read(&accX, &accY, &accZ);
+		//if MOVEMENT_DETECTED //if LOW_LIGHT_WARNING
+		if(1) {
+			light_low_flag = 1;
+		}
 
-			//poll temp sensor
-			temperature_reading = temp_read();
-
-
-
-			//update OLED
-			sprintf(tempStr, "LUX :%lu", light_reading);
-			oled_putString(1, 10, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			sprintf(tempStr, "TEMP:%.2f", temperature_reading/10.0);
-			oled_putString(1, 20, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			sprintf(tempStr, "ACC :%d|%d|%d     ", accX-accInitX, accY-accInitY, accZ-accInitZ);
-			oled_putString(1, 30, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-
-			SAMPLE_SENSORS_FLAG = 0;
+		//if high temperature is detected
+		if(temperature_reading >= TEMP_HIGH_WARNING) {
+			temp_high_flag = 1;
 		}
 	}
 
