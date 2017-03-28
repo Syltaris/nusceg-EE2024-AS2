@@ -16,10 +16,7 @@
 #include "light.h"
 #include "temp.h"
 
-#define light_interrupt 17
 
-void rgbLED_controller(void);
-void monitor_oled_init(void);
 
 /*** LED params ***/
 static uint8_t ledRed_set = 0;
@@ -47,7 +44,7 @@ volatile int light_low_flag = 0;
 
 /*** MMA7455 accelerometer sensor params ***/
 int8_t accInitX, accInitY, accInitZ; //for offsetting
-int8_t accX, accY, accZ;
+volatile int8_t accX, accY, accZ;
 int8_t accOldX, accOldY, accOldZ;
 
 /*** temperature sensor ***/
@@ -64,7 +61,6 @@ volatile int sample_sensors_flag = 0;
 /*** OLED params ***/
 char tempStr[80];
 
-<<<<<<< HEAD
 /*** UART params ***/
 volatile int send_message_flag = 0;
 
@@ -72,12 +68,11 @@ volatile int send_message_flag = 0;
 
 
 
-=======
->>>>>>> f37298b583189b5600f2650777a426b6e4c5f9a6
 /*** protocols initialisers ***/
 
 //i2c enabler
-static void init_I2C2(void) {
+static void init_I2C2(void)
+{
 	PINSEL_CFG_Type PinCfg;
 
 	/* Initialize I2C2 pin connect */
@@ -266,6 +261,8 @@ uint32_t getTicks(void) {
 	return msTicks;
 }
 
+
+
 //protocol init
 void init_protocols() {
 	//protocol init
@@ -293,34 +290,8 @@ void init_interrupts() {
 	//interrupts init
 	init_timer1(); //2s period clock
 	init_timer2(); //4s period clock
-
-//	LPC_GPIOINT ->IO2IntEnF |= 1 << 10;
-
-	// config pin 2.10 for EINT0
-	PINSEL_CFG_Type PinCfg;
-	PinCfg.Funcnum = 1;
-	PinCfg.OpenDrain = 0;
-	PinCfg.Pinmode = 0;
-	PinCfg.Portnum = 2;
-	PinCfg.Pinnum = 10;
-	PINSEL_ConfigPin(&PinCfg);
-
-	// EINT0
-	int * EXT_INT_Mode_Register = (int *)0x400fc148;
-	* EXT_INT_Mode_Register |= 1 << 0; // edge sensitive
-	int * EXT_INT_Polarity_Register = (int *)0x400fc14c;
-	* EXT_INT_Polarity_Register |= 0 << 0; // falling edge
-
-	NVIC_EnableIRQ(EINT0_IRQn); // Enable EINT0 interrupt
-
-	LPC_GPIOINT ->IO0IntEnF |= 1 << light_interrupt;
-
-	light_enable();
-	light_setLoThreshold(100);
-	light_setIrqInCycles(LIGHT_CYCLE_1);
-
+	LPC_GPIOINT ->IO2IntEnF |= 1 << 10;
 	NVIC_EnableIRQ(EINT3_IRQn); // Enable EINT3 interrupt
-
 }
 
 //reset devices and disable timers
@@ -390,36 +361,30 @@ void sample_sensors(void) {
 	temperature_reading = temp_read();
 }
 
+
+
 /*** OLED functions for monitor mode ***/
 
 //prints empty labels and 'monitor' on oled
 void monitor_oled_init(void) {
-	oled_putString(1, 1, (uint8_t *) "MODE: MONITOR", OLED_COLOR_WHITE,
-			OLED_COLOR_BLACK);
-	oled_putString(1, 10, (uint8_t *) "LUX : ", OLED_COLOR_WHITE,
-			OLED_COLOR_BLACK);
-	oled_putString(1, 20, (uint8_t *) "TEMP: ", OLED_COLOR_WHITE,
-			OLED_COLOR_BLACK);
-	oled_putString(1, 30, (uint8_t *) "ACC : ", OLED_COLOR_WHITE,
-			OLED_COLOR_BLACK);
+	oled_putString(1, 1, "MODE: MONITOR", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(1, 10, "LUX : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(1, 20, "TEMP: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(1, 30, "ACC : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 }
 
 //update sampled data on oled
 void monitor_oled_sensors(void) {
 	//update OLED
 	sprintf(tempStr, "LUX :%lu", light_reading);
-	oled_putString(1, 10, (uint8_t *) tempStr, OLED_COLOR_WHITE,
-			OLED_COLOR_BLACK);
+	oled_putString(1, 10, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	sprintf(tempStr, "TEMP:%.2f", temperature_reading / 10.0);
-	oled_putString(1, 20, (uint8_t *) tempStr, OLED_COLOR_WHITE,
-			OLED_COLOR_BLACK);
+	oled_putString(1, 20, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	sprintf(tempStr, "ACC :%d|%d|%d     ", accX - accInitX, accY - accInitY,
 			accZ - accInitZ);
-	oled_putString(1, 30, (uint8_t *) tempStr, OLED_COLOR_WHITE,
-			OLED_COLOR_BLACK);
+	oled_putString(1, 30, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 }
 
-<<<<<<< HEAD
 //transmit message through UART
 void transmitData(char* msg) {
     uint8_t data = 0;
@@ -448,64 +413,55 @@ void transmitData(char* msg) {
 }
 
 int main (void) {
-=======
-int main(void) {
->>>>>>> f37298b583189b5600f2650777a426b6e4c5f9a6
 	//SysTick init
-	SysTick_Config(SystemCoreClock / 1000);
+	SysTick_Config(SystemCoreClock/1000);
 
 	init_protocols();
 	init_peripherals();
 	init_interrupts();
 
 	//hardware setup
+	light_enable(); //enable light sensor
 	oled_clearScreen(OLED_COLOR_BLACK); //clear oled
 	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
 
 	//main execution loop
-	while (1) {
-		uint32_t reading = light_read();
-		printf("%d\n", (int) reading);
-
-		if (flag) {
-			printf("hello\n");
-		}
-
+	while(1) {
 		//stable, passive mode
-		if (mode_flag == 0) {
+		if(mode_flag == 0) {
 			prep_passiveMode();
-			while (mode_flag == 0)
-				; //wait for MONITOR to be enabled
+			while(mode_flag == 0); //wait for MONITOR to be enabled
 			prep_monitorMode();
 		}
 
-		if (led_array_flag && mode_flag) {
+
+		if(led_array_flag && mode_flag) {
 			pca9532_setLeds(led_set, 0xFFFF);  //moves onLed down array
 			led_set = led_mov_dir ? led_set >> 1 : led_set << 1;
 
 			//changes direction when at the ends
-			if (led_set == 0x0001) {
+			if(led_set == 0x0001) {
 				led_mov_dir = 0;
-			} else if (led_set == 0x8000) {
+			} else if(led_set == 0x8000) {
 				led_mov_dir = 1;
 			}
 			led_array_flag = 0;
 		}
 
 		//main tasks
-		if (sample_sensors_flag) {
+		if(sample_sensors_flag) {
 			sample_sensors();
 			monitor_oled_sensors();
 			sample_sensors_flag = 0;
 		}
 
 		//if MOVEMENT_DETECTED //if LOW_LIGHT_WARNING
-		if (1) {
+		if(1) {
 			light_low_flag = 1;
 		}
 
 		//if high temperature is detected
-		if (temperature_reading >= TEMP_HIGH_WARNING) {
+		if(temperature_reading >= TEMP_HIGH_WARNING) {
 			temp_high_flag = 1;
 		}
 
@@ -520,4 +476,7 @@ int main(void) {
 
 	return 0;
 }
+
+
+
 
