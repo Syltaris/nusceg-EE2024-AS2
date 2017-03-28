@@ -5,6 +5,7 @@
 #include "lpc17xx_i2c.h"
 #include "lpc17xx_ssp.h"
 #include "lpc17xx_timer.h"
+#include "lpc17xx_uart.h"
 
 #include "joystick.h"
 #include "pca9532.h"
@@ -34,7 +35,7 @@ volatile uint32_t msTicks = 0; // counter for 1ms SysTicks
 
 /*** 7-segment display params ***/
 volatile int sseg_flag = 0;
-unsigned int sseg_count = 0;
+unsigned int timer2count = 0;
 int monitor_symbols[]  = {'0', '1', '2', '3', '4', '5', '6' ,'7' ,'8' ,'9' ,'A', 'B', 'C', 'D', 'E', 'F'};
 
 /*** ISL290003 light sensor params ***/
@@ -59,6 +60,9 @@ volatile int sample_sensors_flag = 0;
 
 /*** OLED params ***/
 char tempStr[80];
+
+/*** UART params ***/
+volatile int send_message_flag = 0;
 
 
 
@@ -123,7 +127,49 @@ static void init_SSP(void)
 	SSP_Cmd(LPC_SSP1, ENABLE);
 }
 
-//timer1 w/ 2s(?) period
+//uart1 pincfg
+void pinsel_uart1(void){
+    PINSEL_CFG_Type PinCfg;
+    PinCfg.Funcnum = 2;
+    PinCfg.Pinnum = 0;
+    PinCfg.Portnum = 15;
+    PINSEL_ConfigPin(&PinCfg);
+    PinCfg.Pinnum = 16;
+    PINSEL_ConfigPin(&PinCfg);
+}
+
+//uart3 pincfg
+void pinsel_uart3(void){
+    PINSEL_CFG_Type PinCfg;
+    PinCfg.Funcnum = 2;
+    PinCfg.Pinnum = 0;
+    PinCfg.Portnum = 0;
+    PINSEL_ConfigPin(&PinCfg);
+    PinCfg.Pinnum = 1;
+    PINSEL_ConfigPin(&PinCfg);
+}
+
+//uart enabler
+void init_uart(void){
+    UART_CFG_Type uartCfg;
+    uartCfg.Baud_rate = 115200;
+    uartCfg.Databits = UART_DATABIT_8;
+    uartCfg.Parity = UART_PARITY_NONE;
+    uartCfg.Stopbits = UART_STOPBIT_1;
+    //pin select for uart1;
+    pinsel_uart1();
+    //supply power & setup working parameters for uart1
+    UART_Init(LPC_UART1, &uartCfg);
+    //enable transmit for uart1
+    UART_TxCmd(LPC_UART1, ENABLE);
+
+    //init uart3
+    pinsel_uart3();
+    UART_Init(LPC_UART3, &uartCfg);
+    UART_TxCmd(LPC_UART3, ENABLE);
+}
+
+//timer1 w/ 0.33s~ period
 static void init_timer1(){
 
 	// default value of PCLK = CCLK/4
@@ -133,7 +179,7 @@ static void init_timer1(){
 
     LPC_TIM1->MCR  = (1<<0) | (1<<1);     		/* Clear COUNT on MR0 match and Generate Interrupt */
     LPC_TIM1->PR   = 0;      					/* Update COUNT every (value + 1) of PCLK  */
-    LPC_TIM1->MR0  = 20000000;                 	/* Value of COUNT that triggers interrupts */
+    LPC_TIM1->MR0  = 8888888;                 	/* Value of COUNT that triggers interrupts */
     LPC_TIM1->TCR  = (1 << 0);                 	/* Start timer by setting the Counter Enable */
 
     NVIC_EnableIRQ(TIMER1_IRQn);				/* Enable Timer1 interrupt */
@@ -157,6 +203,7 @@ static void init_timer2(){
 
 }
 
+void rgbLED_controller(void);
 void TIMER1_IRQHandler(void)
 {
 	unsigned int isrMask;
@@ -179,9 +226,14 @@ void TIMER2_IRQHandler(void)
 
     sseg_flag = 1;
 
-    if(sseg_count == 5 || sseg_count == 10 || sseg_count == 15) {
+    if(timer2count == 5 || timer2count == 10 || timer2count == 15) {
     	sample_sensors_flag = 1;
     }
+
+    if(timer2count == 15) {
+    	send_message_flag = 1;
+    }
+
 	sseg_controller(); // ! may be slow
 }
 
@@ -216,6 +268,7 @@ void init_protocols() {
 	//protocol init
 	init_I2C2();
 	init_SSP();
+	init_uart();
 }
 
 //sensors, peripherals init
@@ -246,7 +299,7 @@ void prep_passiveMode(void) {
 	//off everything
 	oled_clearScreen(OLED_COLOR_BLACK); //clear OLED
 	led7seg_setChar(0x00, 0);			//off 7 segment
-	sseg_count = 0;						//reset 7 segment counter
+	timer2count = 0;						//reset 7 segment counter
 	rgb_setLeds(ledRed_mask & 0x00);	//off RGB led
 
 	//reset clocks
@@ -262,6 +315,7 @@ void prep_passiveMode(void) {
 }
 
 //re-enable timers
+void monitor_oled_init(void);
 void prep_monitorMode(void) {
 	//un-reset clocks
 	LPC_TIM1 ->TCR = (0 << 1);
@@ -275,8 +329,8 @@ void prep_monitorMode(void) {
 
 //sets the sseg to the corresponding symbol
 void sseg_controller(void) {
-	led7seg_setChar(monitor_symbols[sseg_count++], 0);
-	sseg_count %= 16;
+	led7seg_setChar(monitor_symbols[timer2count++], 0);
+	timer2count %= 16;
 }
 
 //toggles LEDs
@@ -293,8 +347,8 @@ void rgbLED_controller(void) {
 		ledBlue_set = 0;
 	}
 
-	rgb_setLeds(ledRed_mask & ledRed_set
-				| ledBlue_mask & ledBlue_set);
+	rgb_setLeds((ledRed_mask & ledRed_set)
+				| (ledBlue_mask & ledBlue_set));
 }
 
 //sample the accelerometer, light, temperature sensors
@@ -329,6 +383,33 @@ void monitor_oled_sensors(void) {
 	sprintf(tempStr, "ACC :%d|%d|%d     ", accX - accInitX, accY - accInitY,
 			accZ - accInitZ);
 	oled_putString(1, 30, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+}
+
+//transmit message through UART
+void transmitData(char* msg) {
+    uint8_t data = 0;
+    uint32_t len = 0;
+    uint8_t line[64];
+
+    //test sending message
+    UART_Send(LPC_UART3, (uint8_t *)msg , strlen(msg), BLOCKING);
+    //test receiving a letter and sending back to port
+    UART_Receive(LPC_UART3, &data, 1, BLOCKING);
+    UART_Send(LPC_UART3, &data, 1, BLOCKING);
+    //test receiving message without knowing message length
+    len = 0;
+    do
+    {   UART_Receive(LPC_UART3, &data, 1, BLOCKING);
+
+        if (data != '\r')
+        {
+            len++;
+            line[len-1] = data;
+        }
+    } while ((len<64) && (data != '\r'));
+    line[len]=0;
+    UART_SendString(LPC_UART3, &line);
+    printf("--%s--\n", line);
 }
 
 int main (void) {
@@ -382,6 +463,14 @@ int main (void) {
 		//if high temperature is detected
 		if(temperature_reading >= TEMP_HIGH_WARNING) {
 			temp_high_flag = 1;
+		}
+
+		//if need to transmit
+		if(send_message_flag) {
+			char* msg = "HELLCOME \n";
+			transmitData(msg);
+
+			send_message_flag = 0;
 		}
 	}
 
