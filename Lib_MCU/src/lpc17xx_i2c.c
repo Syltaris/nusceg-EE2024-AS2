@@ -160,7 +160,8 @@ static void I2C_Stop (LPC_I2C_TypeDef *I2Cx)
  **********************************************************************/
 static uint32_t I2C_SendByte (LPC_I2C_TypeDef *I2Cx, uint8_t databyte)
 {
-	/* Make sure start bit is not active */
+	/* Make sure start bit is not active
+	 * aka Clear start bit */
 	if (I2Cx->I2CONSET & I2C_I2CONSET_STA)
 	{
 		I2Cx->I2CONCLR = I2C_I2CONCLR_STAC;
