@@ -8,154 +8,167 @@
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_timer.h"
+#include "lpc17xx_ssp.h"
+#include "oled.h"
 
-//#include "rgb.h"
+typedef struct menu {
+	struct menu * first;
+	struct menu * second;
+	struct menu * prev;
+	int num;
 
-#define NOTE_PIN_HIGH() GPIO_SetValue(0, 1<<26);
-#define NOTE_PIN_LOW()  GPIO_ClearValue(0, 1<<26);
+} menu;
 
-// Interval in us
-static uint32_t notes[] = {
-        2272, // A - 440 Hz
-        2024, // B - 494 Hz
-        3816, // C - 262 Hz
-        3401, // D - 294 Hz
-        3030, // E - 330 Hz
-        2865, // F - 349 Hz
-        2551, // G - 392 Hz
-        1136, // a - 880 Hz
-        1012, // b - 988 Hz
-        1912, // c - 523 Hz
-        1703, // d - 587 Hz
-        1517, // e - 659 Hz
-        1432, // f - 698 Hz
-        1275, // g - 784 Hz
-};
+static menu myMenu;
+static menu first;
+static menu second;
 
-static void playNote(uint32_t note, uint32_t durationMs)
-{
-    uint32_t t = 0;
+volatile int updated = 0;
+volatile int x = 20, y = 20;
+volatile int menu_counter = 1;
 
-    if (note > 0) {
-        while (t < (durationMs*1000)) {
-            NOTE_PIN_HIGH();
-            Timer0_us_Wait(note/2); // us timer
-
-            NOTE_PIN_LOW();
-            Timer0_us_Wait(note/2);
-
-            t += note;
-        }
-    }
-    else {
-    	Timer0_Wait(durationMs); // ms timer
-    }
-}
-
-static uint32_t getNote(uint8_t ch)
-{
-    if (ch >= 'A' && ch <= 'G')
-        return notes[ch - 'A'];
-
-    if (ch >= 'a' && ch <= 'g')
-        return notes[ch - 'a' + 7];
-
-    return 0;
-}
-
-static uint32_t getDuration(uint8_t ch)
-{
-    if (ch < '0' || ch > '9')
-        return 400;
-    /* number of ms */
-    return (ch - '0') * 200;
-}
-
-static uint32_t getPause(uint8_t ch)
-{
-    switch (ch) {
-    case '+':
-        return 0;
-    case ',':
-        return 5;
-    case '.':
-        return 20;
-    case '_':
-        return 30;
-    default:
-        return 5;
-    }
-}
-
-static void playSong(uint8_t *song) {
-    uint32_t note = 0;
-    uint32_t dur  = 0;
-    uint32_t pause = 0;
-
-    /*
-     * A song is a collection of tones where each tone is
-     * a note, duration and pause, e.g.
-     *
-     * "E2,F4,"
-     */
-
-    while(*song != '\0') {
-        note = getNote(*song++);
-        if (*song == '\0')
-            break;
-        dur  = getDuration(*song++);
-        if (*song == '\0')
-            break;
-        pause = getPause(*song++);
-
-        playNote(note, dur);
-        Timer0_Wait(pause);
-    }
-}
-
-static uint8_t * song = (uint8_t*)"C1.C1,D2,C2,F2,E4,";
-
-static void init_GPIO(void)
-{
-	// Initialize button SW4 (not really necessary since default configuration)
+static void init_ssp(void) {
+	SSP_CFG_Type SSP_ConfigStruct;
 	PINSEL_CFG_Type PinCfg;
-	PinCfg.Funcnum = 0;
+
+	/*
+	 * Initialize SPI pin connect
+	 * P0.7 - SCK;
+	 * P0.8 - MISO
+	 * P0.9 - MOSI
+	 * P2.2 - SSEL - used as GPIO
+	 */
+	PinCfg.Funcnum = 2;
 	PinCfg.OpenDrain = 0;
 	PinCfg.Pinmode = 0;
-	PinCfg.Portnum = 1;
-	PinCfg.Pinnum = 31;
+	PinCfg.Portnum = 0;
+	PinCfg.Pinnum = 7;
 	PINSEL_ConfigPin(&PinCfg);
-	GPIO_SetDir(1, 1<<31, 0);
+	PinCfg.Pinnum = 8;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Pinnum = 9;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Funcnum = 0;
+	PinCfg.Portnum = 2;
+	PinCfg.Pinnum = 2;
+	PINSEL_ConfigPin(&PinCfg);
 
-    /* ---- Speaker ------> */
-//    GPIO_SetDir(2, 1<<0, 1);
-//    GPIO_SetDir(2, 1<<1, 1);
+	SSP_ConfigStructInit(&SSP_ConfigStruct);
 
-    GPIO_SetDir(0, 1<<27, 1);
-    GPIO_SetDir(0, 1<<28, 1);
-    GPIO_SetDir(2, 1<<13, 1);
+	// Initialize SSP peripheral with parameter given in structure above
+	SSP_Init(LPC_SSP1, &SSP_ConfigStruct);
 
-    // Main tone signal : P0.26
-    GPIO_SetDir(0, 1<<26, 1);
+	// Enable SSP peripheral
+	SSP_Cmd(LPC_SSP1, ENABLE);
 
-    GPIO_ClearValue(0, 1<<27); //LM4811-clk
-    GPIO_ClearValue(0, 1<<28); //LM4811-up/dn
-    GPIO_ClearValue(2, 1<<13); //LM4811-shutdn
-    /* <---- Speaker ------ */
 }
 
-int main (void) {
+static void init_gpio(void) {
 
-    uint8_t btn1 = 1;
-
-    init_GPIO();
-
-    while (1)
-    {
-
-        if (btn1 == 0)
-        {
-            playSong(song);
-        }
-    }
+	// for SW2
+	GPIO_SetDir(0, 1 << 15, 0); //input
+	GPIO_SetDir(0, 1 << 16, 0); //input
+	GPIO_SetDir(0, 1 << 17, 0); //input
+	GPIO_SetDir(2, 1 << 3, 0); //input
+	GPIO_SetDir(2, 1 << 4, 0); //input
 }
+
+static void init_interrupt(void) {
+	LPC_GPIOINT ->IO0IntEnF |= 1 << 15;
+	LPC_GPIOINT ->IO0IntEnF |= 1 << 16;
+	LPC_GPIOINT ->IO0IntEnF |= 1 << 17;
+	LPC_GPIOINT ->IO2IntEnF |= 1 << 3;
+	LPC_GPIOINT ->IO2IntEnF |= 1 << 4;
+}
+
+void EINT3_IRQHandler(void) {
+	// Determine whether GPIO Interrupt P2.10 has occurred
+	if ((LPC_GPIOINT ->IO0IntStatF >> 15) & 0x1) {
+//		y++;
+		menu_counter = (menu_counter + 1) % 2;
+		updated = 1;
+
+		LPC_GPIOINT ->IO0IntClr = 1 << 15;
+	}
+	if ((LPC_GPIOINT ->IO0IntStatF >> 16) & 0x1) {
+//		x++;
+		LPC_GPIOINT ->IO0IntClr = 1 << 16;
+	}
+	if ((LPC_GPIOINT ->IO0IntStatF >> 17) & 0x1) {
+		// centre button
+
+		LPC_GPIOINT ->IO0IntClr = 1 << 17;
+	}
+	if ((LPC_GPIOINT ->IO2IntStatF >> 3) & 0x1) {
+//		y--;
+
+		menu_counter--;
+		if (menu_counter < 0)
+			menu_counter = 0;
+		updated = 1;
+
+		LPC_GPIOINT ->IO2IntClr = 1 << 3;
+	}
+	if ((LPC_GPIOINT ->IO2IntStatF >> 4) & 0x1) {
+//		x--;
+		LPC_GPIOINT ->IO2IntClr = 1 << 4;
+	}
+}
+
+static void draw_menu(menu * current_menu) {
+	char temp[10];
+	sprintf(temp, "%d", current_menu->first->num);
+	oled_putString(10, 0, temp, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	sprintf(temp, "%d", current_menu->second->num);
+	oled_putString(10, 10, temp, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+}
+
+static void draw_cursor(void) {
+	oled_putString(0, menu_counter * 10, "->", OLED_COLOR_WHITE,
+			OLED_COLOR_BLACK);
+}
+
+static void init_tree(void) {
+	myMenu.first = &first;
+	myMenu.second = &second;
+	myMenu.prev = NULL;
+	myMenu.num = 0;
+
+	first.first = NULL;
+	first.second = NULL;
+	first.prev = &myMenu;
+	first.num = 1;
+
+	second.first = NULL;
+	second.second = NULL;
+	second.prev = &myMenu;
+	second.num = 2;
+
+}
+
+int main(void) {
+
+	init_ssp();
+	init_gpio();
+	oled_init();
+	oled_clearScreen(OLED_COLOR_BLACK);
+
+	init_interrupt();
+	NVIC_EnableIRQ(EINT3_IRQn);
+
+	init_tree();
+
+	draw_cursor();
+	draw_menu(&myMenu);
+
+	while (1) {
+		if (updated) {
+			oled_clearScreen(OLED_COLOR_BLACK);
+			draw_cursor();
+			draw_menu(&myMenu);
+			updated = 0;
+		}
+	}
+
+}
+
