@@ -383,7 +383,7 @@ uint8_t light_getIrqStatus(void)
 {
     uint8_t ctrl = readControlReg();
 
-    return ((ctrl & CTRL_IRQ_FLAG) != 0);
+    return ((ctrl & CTRL_IRQ_FLAG) != 0); // 1 (int triggered) != 0 => 1 (TRUE) no need bit shift then return
 }
 
 /******************************************************************************
