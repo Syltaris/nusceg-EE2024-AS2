@@ -376,7 +376,7 @@ void monitor_oled_init(void) {
 //update sampled data on oled
 void monitor_oled_sensors(void) {
 	//update OLED
-	sprintf(tempStr, "LUX :%lu", light_reading);
+	sprintf(tempStr, "LUX :%u", light_reading);
 	oled_putString(1, 10, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	sprintf(tempStr, "TEMP:%.2f", temperature_reading / 10.0);
 	oled_putString(1, 20, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
@@ -385,31 +385,43 @@ void monitor_oled_sensors(void) {
 	oled_putString(1, 30, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 }
 
+int format_string(char * string, char * title, float value){
+ return sprintf(string, "%s_%s%.2f", string, title, value);
+}
 //transmit message through UART
 void transmitData(char* msg) {
-    uint8_t data = 0;
-    uint32_t len = 0;
-    uint8_t line[64];
+	static uint8_t transmitCount = 0;
 
+    char string[50];
+	sprintf(string, "%d_-", transmitCount++);
+
+	format_string(string, "T", temperature_reading/10.0);
+	format_string(string, "L", light_reading);
+	format_string(string, "AX", accX-accInitX);
+	format_string(string, "AY", accY-accInitY);
+	format_string(string, "AZ", accZ-accInitZ);
+
+	sprintf(string, "%s\r\n", string);
+
+    UART_SendString(LPC_UART3, &string);
     //test sending message
-    UART_Send(LPC_UART3, (uint8_t *)msg , strlen(msg), BLOCKING);
-    //test receiving a letter and sending back to port
-    UART_Receive(LPC_UART3, &data, 1, BLOCKING);
-    UART_Send(LPC_UART3, &data, 1, BLOCKING);
-    //test receiving message without knowing message length
-    len = 0;
-    do
-    {   UART_Receive(LPC_UART3, &data, 1, BLOCKING);
-
-        if (data != '\r')
-        {
-            len++;
-            line[len-1] = data;
-        }
-    } while ((len<64) && (data != '\r'));
-    line[len]=0;
-    UART_SendString(LPC_UART3, &line);
-    printf("--%s--\n", line);
+//    UART_Send(LPC_UART3, (uint8_t *)string , strlen(msg), BLOCKING);
+//    //test receiving a letter and sending back to port
+//    UART_Receive(LPC_UART3, &data, 1, BLOCKING);
+//    UART_Send(LPC_UART3, &data, 1, BLOCKING);
+//    //test receiving message without knowing message length
+//    len = 0;
+//    do
+//    {   UART_Receive(LPC_UART3, &data, 1, BLOCKING);
+//
+//        if (data != '\r')
+//        {
+//            len++;
+//            line[len-1] = data;
+//        }
+//    } while ((len<64) && (data != '\r'));
+//    line[len]=0;
+//    printf("--%s--\n", line);
 }
 
 int main (void) {
