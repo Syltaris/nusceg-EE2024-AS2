@@ -447,6 +447,8 @@ void prep_monitorMode(void) {
 	init_timer2();
 
 	monitor_oled_init();
+
+	UART_SendString(LPC_UART3, "Entering MONITOR Mode.\r\n");
 }
 
 //reset devices and disable timers
