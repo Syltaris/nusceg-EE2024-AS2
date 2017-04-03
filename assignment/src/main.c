@@ -313,7 +313,7 @@ void init_interrupts() {
 
 	// accelerometer pio1_8, P0.3
 	LPC_GPIOINT ->IO0IntClr |= 1 << 3;
-	LPC_GPIOINT ->IO0IntEnF |= 1 << 3;
+	LPC_GPIOINT ->IO0IntEnR |= 1 << 3;
 
 	NVIC_ClearPendingIRQ(EINT3_IRQn);
 	NVIC_EnableIRQ(EINT3_IRQn); // Enable EINT3 interrupt
@@ -397,9 +397,11 @@ void EINT3_IRQHandler(void)
 		printf("light triggered\n");
 	}
 	// Determine if GPIO Interrupt P0.3 has occurred (MMA7455 Accelerometer)
-	if ((LPC_GPIOINT ->IO0IntStatF >> 3) & 0x1) {
+	if ((LPC_GPIOINT ->IO0IntStatR >> 3) & 0x1) {
 	  movement_detected_flag = 1;
 
+	  LPC_GPIOINT->IO0IntClr = 1<<3;
+	  acc_intClr();
 	  printf("acc triggered\n");
 	}
 
@@ -468,7 +470,7 @@ void sample_sensors(void) {
 	//poll light sensor
 	light_reading = light_read();
 	//poll acc sensor
-	acc_read(&accX, &accY, &accZ);
+//	acc_read(&accX, &accY, &accZ);
 	//poll temp sensor
 	temperature_reading = temp_read();
 }
@@ -516,9 +518,10 @@ int main (void) {
 	light_setIrqInCycles(LIGHT_CYCLE_1);
 	light_enable(); //enable light sensor
 	oled_clearScreen(OLED_COLOR_BLACK); //clear oled
-	//acc_config_mode_LEVEL();
-	acc_setMode(ACC_MODE_PULSE);
-	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
+	acc_setMode(ACC_MODE_LEVEL);
+	acc_setRange(ACC_RANGE_8G);
+	acc_config_mode_LEVEL();
+//	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
 
 	//main execution loop
 	while(1) {
