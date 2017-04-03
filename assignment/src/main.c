@@ -61,7 +61,7 @@ volatile int mode_flag = 0; //1 - monitor, 0 - passive
 volatile int sample_sensors_flag = 0;
 
 /*** OLED params ***/
-char tempStr[80];
+uint8_t tempStr[80];
 
 /*** UART params ***/
 volatile int send_message_flag = 0;
@@ -79,17 +79,8 @@ static void init_GPIO(void) {
 	PinCfg.OpenDrain = 0;
 	PinCfg.Pinnum = 10;
 	PinCfg.Portnum = 2;
+	PinCfg.Pinmode = 0;
 	PINSEL_ConfigPin(&PinCfg);
-
-	GPIO_SetDir(2, 1<<10, 0);
-
-	// EINT0
-	int * EXT_INT_Mode_Register = (int *)0x400fc148;
-	* EXT_INT_Mode_Register |= 1 << 0; // edge sensitive
-	int * EXT_INT_Polarity_Register = (int *)0x400fc14c;
-	* EXT_INT_Polarity_Register |= 0 << 0; // falling edge
-
-	NVIC_EnableIRQ(EINT0_IRQn); // Enable EINT0 interrupt
 }
 
 
@@ -253,7 +244,7 @@ void TIMER2_IRQHandler(void)
     	send_message_flag = 1;
     }
 
-//	sseg_controller(); // ! may be slow
+	sseg_controller(); // ! may be slow
 }
 
 
@@ -311,7 +302,7 @@ void init_interrupts() {
 	init_timer2(); //1s period clock
 
 	//switches
-	LPC_GPIOINT ->IO2IntEnF |= 1 << 10; // enable SW3
+//	LPC_GPIOINT ->IO2IntEnF |= 1 << 10; // enable SW3
 
 	//light sensor
 	LPC_GPIOINT ->IO2IntClr |= 1 << 5;
@@ -326,6 +317,16 @@ void init_interrupts() {
 
 	NVIC_ClearPendingIRQ(EINT3_IRQn);
 	NVIC_EnableIRQ(EINT3_IRQn); // Enable EINT3 interrupt
+
+
+	// EINT0
+	int * EXT_INT_Mode_Register = (int *)0x400fc148;
+	* EXT_INT_Mode_Register |= 1 << 0; // edge sensitive
+	int * EXT_INT_Polarity_Register = (int *)0x400fc14c;
+	* EXT_INT_Polarity_Register |= 0 << 0; // falling edge
+
+	NVIC_ClearPendingIRQ(EINT0_IRQn);
+	NVIC_EnableIRQ(EINT0_IRQn); // Enable EINT0 interrupt
 
 }
 
@@ -354,14 +355,23 @@ void rgbLED_controller(void) {
 				| (ledBlue_mask & ledBlue_set));
 }
 
-void EINT0_IRQHandler(void) {
-	// Determine whether GPIO Interrupt P2.10 has occurred (SW3)
-	if ((LPC_GPIOINT->IO2IntStatF>>10)& 0x1) {
-		mode_flag = !mode_flag; // ready to put device into monitor mode
+//void EINT0_IRQHandler(void) {
+////	// Determine whether GPIO Interrupt P2.10 has occurred (SW3)
+////	if ((LPC_GPIOINT->IO2IntStatF>>10)& 0x1) {
+//		mode_flag = !mode_flag; // ready to put device into monitor mode
+//
+////        // Clear GPIO Interrupt P2.10
+////        LPC_GPIOINT->IO2IntClr = 1<<10;
+////	}
+//}
 
-        // Clear GPIO Interrupt P2.10
-        LPC_GPIOINT->IO2IntClr = 1<<10;
-	}
+void EINT0_IRQHandler(void) {
+	printf("hi\n");
+
+	mode_flag = !mode_flag;
+
+	NVIC_ClearPendingIRQ(EINT0_IRQn);
+	LPC_SC ->EXTINT = (1 << 0); /* Clear Interrupt Flag */
 }
 
 // EINT3 Interrupt Handler
@@ -498,14 +508,16 @@ int main (void) {
 
 	init_protocols();
 	init_peripherals();
+	init_GPIO();
 	init_interrupts();
+
 
 	//hardware setup
 	light_setIrqInCycles(LIGHT_CYCLE_1);
 	light_enable(); //enable light sensor
 	oled_clearScreen(OLED_COLOR_BLACK); //clear oled
-	acc_config_mode_LEVEL();
-	acc_setMode(ACC_MODE_LEVEL);
+	//acc_config_mode_LEVEL();
+	acc_setMode(ACC_MODE_PULSE);
 	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
 
 	//main execution loop
@@ -515,11 +527,6 @@ int main (void) {
 			prep_passiveMode();
 			while(mode_flag == 0); //wait for MONITOR to be enabled
 			prep_monitorMode();
-		}
-
-		if(sseg_flag) {
-			sseg_controller();
-			sseg_flag = 0;
 		}
 
 		if(led_array_flag && mode_flag) {
