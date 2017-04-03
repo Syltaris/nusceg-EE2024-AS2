@@ -16,7 +16,14 @@
 #include "light.h"
 #include "temp.h"
 
+#define DEBUG
 
+#ifdef DEBUG
+#define DEBUG_HEAT_OFFSET 200
+#endif
+#ifndef DEBUG
+#define DEBUG_HEAT_OFFSET 0
+#endif
 
 /*** LED params ***/
 static uint8_t ledRed_set = 0;
@@ -48,6 +55,7 @@ int8_t accInitX, accInitY, accInitZ; //for offsetting
 volatile int8_t accX, accY, accZ;
 int8_t accOldX, accOldY, accOldZ;
 volatile int movement_detected_flag = 0;
+volatile uint32_t lastMotionDetectedTicks = 0;
 
 /*** temperature sensor ***/
 int32_t temperature_reading = 0;
@@ -210,8 +218,6 @@ static void init_timer2(){
     NVIC_EnableIRQ(TIMER2_IRQn);				/* Enable Timer2 interrupt */
 
 }
-
-
 
 void rgbLED_controller(void);
 void TIMER1_IRQHandler(void)
@@ -400,6 +406,8 @@ void EINT3_IRQHandler(void)
 	if ((LPC_GPIOINT ->IO0IntStatR >> 3) & 0x1) {
 	  movement_detected_flag = 1;
 
+	  lastMotionDetectedTicks = getTicks();
+
 	  LPC_GPIOINT->IO0IntClr = 1<<3;
 	  acc_intClr();
 	  printf("acc triggered\n");
@@ -470,7 +478,10 @@ void sample_sensors(void) {
 	//poll light sensor
 	light_reading = light_read();
 	//poll acc sensor
-//	acc_read(&accX, &accY, &accZ);
+	acc_setMode(ACC_MODE_MEASURE);
+	acc_read(&accX, &accY, &accZ);
+	acc_setMode(ACC_MODE_LEVEL);
+
 	//poll temp sensor
 	temperature_reading = temp_read();
 }
@@ -485,6 +496,14 @@ int format_string(char * string, char * title, float value){
 }
 //transmit message through UART
 void transmitData(char* msg) {
+	if(temp_high_flag == 1) {
+		UART_SendString(LPC_UART3, "Fire was Detected.\r\n");
+	}
+
+	if(movement_lowLight_flag == 1) {
+		UART_SendString(LPC_UART3, "Movement in darkness was Detected.\r\n");
+	}
+
 	static uint8_t transmitCount = 0;
 
     char string[50];
@@ -518,10 +537,10 @@ int main (void) {
 	light_setIrqInCycles(LIGHT_CYCLE_1);
 	light_enable(); //enable light sensor
 	oled_clearScreen(OLED_COLOR_BLACK); //clear oled
-	acc_setMode(ACC_MODE_LEVEL);
+	acc_setMode(ACC_MODE_LEVEL); //configure for interrupt
 	acc_setRange(ACC_RANGE_8G);
 	acc_config_mode_LEVEL();
-//	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
+	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
 
 	//main execution loop
 	while(1) {
@@ -552,14 +571,22 @@ int main (void) {
 			sample_sensors_flag = 0;
 		}
 
-		//if MOVEMENT_DETECTED && if LOW_LIGHT_WARNING
-		if(movement_detected_flag && (!detect_darkness_flag)) {
-			movement_lowLight_flag = 1;
+		//if high temperature is detected
+		if(temperature_reading >= (TEMP_HIGH_WARNING - DEBUG_HEAT_OFFSET)) {
+			temp_high_flag = 1;
 		}
 
-		//if high temperature is detected
-		if(temperature_reading >= TEMP_HIGH_WARNING) {
-			temp_high_flag = 1;
+		//if MOVEMENT_DETECTED
+		if(movement_detected_flag) {
+			//if no movement in darkness after set duration, disable movement flag
+			if(getTicks() > lastMotionDetectedTicks + 20) {
+				//check for prolonged movement detection, if so, set flag
+				if(!detect_darkness_flag) {
+					movement_lowLight_flag = 1;
+				} else {
+					movement_detected_flag = 0;
+				}
+			}
 		}
 
 		//if need to transmit
