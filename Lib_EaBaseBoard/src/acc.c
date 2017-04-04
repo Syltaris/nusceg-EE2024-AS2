@@ -263,8 +263,14 @@ void acc_config_mode_LEVEL(void) {
 //
 	// reg 1A LDTH = 2F (threshold)
 	buf[0] = ACC_ADDR_LDTH;
-	buf[1] = 0x07;
+	buf[1] = 0x2f;
 	I2CWrite(ACC_I2C_ADDR, buf, 2);
+
+	acc_intClr();
+}
+
+void acc_intClr() {
+	uint8_t buf[2];
 
 	buf[0] = ACC_ADDR_INTRST;
 	buf[1] = 0x03;
