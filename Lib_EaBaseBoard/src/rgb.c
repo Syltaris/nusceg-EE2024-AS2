@@ -71,10 +71,10 @@ void rgb_setLeds (uint8_t ledMask)
         GPIO_ClearValue( 0, (1<<26) );
     }
 
-    if ((ledMask & RGB_GREEN) != 0) {
-        GPIO_SetValue( 2, (1<<1) );
-    } else {
-        GPIO_ClearValue( 2, (1<<1) );
-    }
+//    if ((ledMask & RGB_GREEN) != 0) {
+//        GPIO_SetValue( 2, (1<<1) );
+//    } else {
+//        GPIO_ClearValue( 2, (1<<1) );
+//    }
 
 }
