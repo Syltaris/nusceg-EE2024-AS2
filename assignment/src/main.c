@@ -26,10 +26,8 @@
 #endif
 
 /*** LED params ***/
-static uint8_t ledRed_set = 0;
-static uint8_t ledRed_mask = RGB_RED;
-static uint8_t ledBlue_set = 0;
-static uint8_t ledBlue_mask = RGB_BLUE;
+static uint8_t rgbLED_mask = 0x00;
+static uint8_t rgbLED_set = 0x03;
 
 static uint32_t led_set = 0x0001; //for array
 
@@ -345,34 +343,23 @@ void sseg_controller(void) {
 
 //toggles LEDs
 void rgbLED_controller(void) {
-	if(temp_high_flag) {
-		ledRed_set = ~ledRed_set;
-	} else {
-		ledRed_set = 0;
-	}
-
-	if(movement_lowLight_flag) {
-		ledBlue_set = ~ledBlue_set;
-	} else {
-		ledBlue_set = 0;
-	}
-
-	rgb_setLeds((ledRed_mask & ledRed_set)
-				| (ledBlue_mask & ledBlue_set));
+//	if(temp_high_flag) {
+//		ledRed_set = ~ledRed_set;
+//	} else {
+//		ledRed_set = 0;
+//	}
+//
+//	if(movement_lowLight_flag) {
+//		ledBlue_set = ~ledBlue_set;
+//	} else {
+//		ledBlue_set = 0;
+//	}
+	rgbLED_set = ~rgbLED_set;
+	rgb_setLeds(rgbLED_mask & rgbLED_set);
 }
 
-//void EINT0_IRQHandler(void) {
-////	// Determine whether GPIO Interrupt P2.10 has occurred (SW3)
-////	if ((LPC_GPIOINT->IO2IntStatF>>10)& 0x1) {
-//		mode_flag = !mode_flag; // ready to put device into monitor mode
-//
-////        // Clear GPIO Interrupt P2.10
-////        LPC_GPIOINT->IO2IntClr = 1<<10;
-////	}
-//}
-
 void EINT0_IRQHandler(void) {
-	printf("hi\n");
+	printf("Button Liao\n");
 
 	mode_flag = !mode_flag;
 
@@ -421,21 +408,28 @@ void EINT3_IRQHandler(void)
 //prints empty labels and 'monitor' on oled
 void monitor_oled_init(void) {
 	oled_putString(1, 1, "MODE: MONITOR", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_putString(1, 10, "LUX : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_putString(1, 20, "TEMP: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_putString(1, 30, "ACC : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_rect(0, 10, 95, 62, OLED_COLOR_WHITE);
+	oled_putString(2, 12, "LUX : ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 22, "TEMP: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 32, "ACCX: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 42, "ACCY: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 52, "ACCZ: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 }
 
 //update sampled data on oled
 void displaySampledData_oled(void) {
 	//update OLED
-	sprintf(tempStr, "LUX :%u     ", light_reading);
-	oled_putString(1, 10, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	sprintf(tempStr, "TEMP:%.2f     ", temperature_reading / 10.0);
-	oled_putString(1, 20, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	sprintf(tempStr, "ACC :%d|%d|%d     ", accX - accInitX, accY - accInitY,
-			accZ - accInitZ);
-	oled_putString(1, 30, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	sprintf(tempStr, "%u  ", light_reading);
+	oled_putString(35, 12, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	sprintf(tempStr, "%.2f   ", temperature_reading / 10.0);
+	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	sprintf(tempStr, "%d  ", accX - accInitX);
+	oled_putString(35, 32, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	sprintf(tempStr, "%d  ", accY - accInitY);
+	oled_putString(35, 42, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	sprintf(tempStr, "%d  ", accZ - accInitZ);
+	oled_putString(35, 52, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
 }
 
 void prep_monitorMode(void) {
@@ -447,6 +441,7 @@ void prep_monitorMode(void) {
 	init_timer2();
 
 	monitor_oled_init();
+	sseg_controller();
 
 	UART_SendString(LPC_UART3, "Entering MONITOR Mode.\r\n");
 }
@@ -457,7 +452,7 @@ void prep_passiveMode(void) {
 	oled_clearScreen(OLED_COLOR_BLACK); //clear OLED
 	led7seg_setChar(0x00, 0);			//off 7 segment
 	timer2count = 0;						//reset 7 segment counter
-	rgb_setLeds(ledRed_mask & 0x00);	//off RGB led
+	rgb_setLeds(0x00);	//off RGB led
 
 	//reset clocks
 	LPC_TIM1 ->TCR = (1 << 1);
@@ -470,6 +465,9 @@ void prep_passiveMode(void) {
 	temp_high_flag = 0;
 	detect_darkness_flag = 1;
 	movement_lowLight_flag = 0;
+
+	//reset RGB flag
+	rgbLED_mask = 0x00;
 }
 
 
@@ -575,7 +573,7 @@ int main (void) {
 
 		//if high temperature is detected
 		if(temperature_reading >= (TEMP_HIGH_WARNING - DEBUG_HEAT_OFFSET)) {
-			temp_high_flag = 1;
+			rgbLED_mask |= RGB_RED;
 		}
 
 		//if MOVEMENT_DETECTED
@@ -584,7 +582,7 @@ int main (void) {
 			if(getTicks() > lastMotionDetectedTicks + 20) {
 				//check for prolonged movement detection, if so, set flag
 				if(!detect_darkness_flag) {
-					movement_lowLight_flag = 1;
+					rgbLED_mask |= RGB_BLUE; //toggle blue led mask on
 				} else {
 					movement_detected_flag = 0;
 				}
