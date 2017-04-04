@@ -121,6 +121,8 @@ static int32_t I2C_getNum(LPC_I2C_TypeDef *I2Cx){
  **********************************************************************/
 static uint32_t I2C_Start (LPC_I2C_TypeDef *I2Cx)
 {
+	NVIC_DisableIRQ(EINT3_IRQn);
+
 	I2Cx->I2CONCLR = I2C_I2CONCLR_SIC;
 	I2Cx->I2CONSET = I2C_I2CONSET_STA;
 
@@ -148,6 +150,8 @@ static void I2C_Stop (LPC_I2C_TypeDef *I2Cx)
 	}
 	I2Cx->I2CONSET = I2C_I2CONSET_STO;
 	I2Cx->I2CONCLR = I2C_I2CONCLR_SIC;
+
+	NVIC_EnableIRQ(EINT3_IRQn);
 }
 
 
