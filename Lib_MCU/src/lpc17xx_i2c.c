@@ -121,6 +121,7 @@ static int32_t I2C_getNum(LPC_I2C_TypeDef *I2Cx){
  **********************************************************************/
 static uint32_t I2C_Start (LPC_I2C_TypeDef *I2Cx)
 {
+	// accel and light in EINT3 uses i2c
 	NVIC_DisableIRQ(EINT3_IRQn);
 
 	I2Cx->I2CONCLR = I2C_I2CONCLR_SIC;
