@@ -4,12 +4,12 @@
  * (c) NXP Semiconductors 2013-2017
  * Generated linker script file for LPC1768
  * Created from generic_c.ld (LPCXpresso v6.1 (4 [Build 194] [2014-01-15] ))
- * By LPCXpresso v6.1.4 [Build 194] [2014-01-15]  on Fri Apr 07 15:55:00 SGT 2017
+ * By LPCXpresso v6.1.4 [Build 194] [2014-01-15]  on Tue Mar 07 10:20:28 SGT 2017
  */
 
 
-INCLUDE "assignment_Debug_lib.ld"
-INCLUDE "assignment_Debug_mem.ld"
+INCLUDE "demo_Debug_lib.ld"
+INCLUDE "demo_Debug_mem.ld"
 
 ENTRY(ResetISR)
 
