@@ -73,6 +73,12 @@ uint8_t tempStr[80];
 /*** UART params ***/
 volatile int send_message_flag = 0;
 
+/*** Rotary Switch params ***/
+volatile int font_size = 1;
+volatile int prev_state = 0;
+volatile int rotary_flag_0 = 0;
+volatile int rotary_flag_1 = 0;
+
 /*** protocols initialisers ***/
 static void init_GPIO(void) {
 	PINSEL_CFG_Type PinCfg;
@@ -305,9 +311,15 @@ void init_interrupts() {
 	//configure default light threshold
 	lightSensor_detectDarkness();
 
-	// accelerometer pio1_8, P0.3
+	// accelerometer pio1_8 P0.3
 	LPC_GPIOINT ->IO0IntClr |= 1 << 3;
 	LPC_GPIOINT ->IO0IntEnR |= 1 << 3;
+
+	// rotary switch pio1_0 P0.24, pio1_1 P0.25
+	LPC_GPIOINT ->IO0IntClr |= 1 << 24;
+	LPC_GPIOINT ->IO0IntClr |= 1 << 25;
+	LPC_GPIOINT ->IO0IntEnR |= 1 << 24;
+	LPC_GPIOINT ->IO0IntEnR |= 1 << 25;
 
 	NVIC_ClearPendingIRQ(EINT3_IRQn);
 	NVIC_EnableIRQ(EINT3_IRQn); // Enable EINT3 interrupt
@@ -323,7 +335,6 @@ void init_interrupts() {
 
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
 	NVIC_EnableIRQ(EINT0_IRQn); // Enable EINT0 interrupt
-
 }
 
 //sets the sseg to the corresponding symbol
@@ -348,6 +359,36 @@ void EINT0_IRQHandler(void) {
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
 	LPC_SC ->EXTINT = (1 << 0); /* Clear Interrupt Flag */
 
+}
+
+void check_rotary_switch(void) {
+	// GPIO interrupts on P0.24, P0.25
+	// Check if ANY of the edges detected
+	if ((LPC_GPIOINT ->IO0IntStatR >> 24) & 0x1) {
+		rotary_flag_0 = 1;
+		// channel 1 happened before channel 0
+		// clockwise
+		if (rotary_flag_0 && rotary_flag_1) {
+
+			printf("cw");
+
+			rotary_flag_0 = 0;
+			rotary_flag_1 = 0;
+		}
+		LPC_GPIOINT ->IO0IntClr = 1 << 24; //clear GPIO interrupt
+	} else if (((LPC_GPIOINT ->IO0IntStatR >> 25) & 0x1)) {
+		rotary_flag_1 = 1;
+		// channel 0 happened before channel 1
+		// anti-clockwise
+		if (rotary_flag_0 && rotary_flag_1) {
+
+			printf("acw");
+
+			rotary_flag_0 = 0;
+			rotary_flag_1 = 0;
+		}
+		LPC_GPIOINT ->IO0IntClr = 1 << 25; //clear GPIO interrupt
+	}
 }
 
 // EINT3 Interrupt Handler
@@ -381,6 +422,8 @@ void EINT3_IRQHandler(void) {
 		acc_intClr();
 		printf("acc triggered\n");
 	}
+
+	check_rotary_switch();
 
 }
 
@@ -539,6 +582,16 @@ void initial_setup(int8_t accInitX, int8_t accInitY, int8_t accInitZ) {
 	acc_config_mode_LEVEL();
 	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
 }
+	// test rotary switch values
+	while (1) {
+		int temp = (GPIO_ReadValue(0) >> 24) & 0x1;
+		printf("%d\n", temp);
+//		temp = (GPIO_ReadValue(0) >> 25) & 0x1;
+//		printf("%d\n", temp);
+		int i;
+		for (i = 0; i < 1000000; i++)
+			;
+	}
 
 int main(void) {
 	initial_setup(accInitX, accInitY, accInitZ);
