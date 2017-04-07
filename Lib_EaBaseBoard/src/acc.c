@@ -245,7 +245,6 @@ void acc_config_mode_LEVEL(void) {
 	// reg 18 THOPT = 0
 	// reg 18 INTREG[1:0] = 01 (level detection on int pin 2 == PIO1_8)
 	buf[0] = ACC_ADDR_CTL1;
-	I2CWrite(ACC_I2C_ADDR, buf, 1);
 	I2CRead(ACC_I2C_ADDR, buf, 1);
 
 	buf[1] = buf[0] |= 0x02;
@@ -253,18 +252,62 @@ void acc_config_mode_LEVEL(void) {
 	I2CWrite(ACC_I2C_ADDR, buf, 2);
 
 	// reg 19 LDPL = 0 (level detect polarity +ve)
-//	buf[0] = ACC_ADDR_CTL2;
-//	I2CWrite(ACC_I2C_ADDR, buf, 1);
-//	I2CRead(ACC_I2C_ADDR, buf, 1);
-//
-//	buf[1] = buf[0] |= 0x00;
-//	buf[0] = ACC_ADDR_CTL2;
-//	I2CWrite(ACC_I2C_ADDR, buf, 2);
-//
+	buf[0] = ACC_ADDR_CTL2;
+	I2CWrite(ACC_I2C_ADDR, buf, 1);
+	I2CRead(ACC_I2C_ADDR, buf, 1);
+
+	buf[1] = buf[0] & ~(0x01);
+	buf[0] = ACC_ADDR_CTL2;
+	I2CWrite(ACC_I2C_ADDR, buf, 2);
+
 	// reg 1A LDTH = 2F (threshold)
 	buf[0] = ACC_ADDR_LDTH;
-	buf[1] = 0x2f;
+	buf[1] = 0x2F;
 	I2CWrite(ACC_I2C_ADDR, buf, 2);
+
+	acc_intClr();
+}
+
+void acc_config_mode_PULSE(void) {
+	uint8_t buf[2];
+
+	// reg 18 THOPT = 0
+	// reg 18 INTREG[1:0] = 10 - double pulse
+	buf[0] = ACC_ADDR_CTL1;
+	I2CRead(ACC_I2C_ADDR, buf, 1);
+
+	buf[1] = buf[0] |= 0x00;
+	buf[0] = ACC_ADDR_CTL1;
+	I2CWrite(ACC_I2C_ADDR, buf, 2);
+
+	// reg 19 LDPL = 0 (level detect polarity +ve)
+	buf[0] = ACC_ADDR_CTL2;
+	I2CWrite(ACC_I2C_ADDR, buf, 1);
+	I2CRead(ACC_I2C_ADDR, buf, 1);
+
+	buf[1] = buf[0] & ~(0x01);
+	buf[0] = ACC_ADDR_CTL2;
+	I2CWrite(ACC_I2C_ADDR, buf, 2);
+
+	// reg 1B PDTH = 2F (threshold)
+	buf[0] = ACC_ADDR_PDTH;
+	buf[1] = 0x2F;
+	I2CWrite(ACC_I2C_ADDR, buf, 2);
+
+	// reg 1C pulse dur
+	buf[0] = ACC_ADDR_PW;
+	buf[1] = 0x0F;
+	I2CWrite(ACC_I2C_ADDR, buf, 2);
+
+//	// reg 1D time latency
+//	buf[0] = ACC_ADDR_LT ;
+//	buf[1] = 0x0F;
+//	I2CWrite(ACC_I2C_ADDR, buf, 2);
+//
+//	// reg 1E 2nd window time
+//	buf[0] = ACC_ADDR_TW ;
+//	buf[1] = 0x0F;
+//	I2CWrite(ACC_I2C_ADDR, buf, 2);
 
 	acc_intClr();
 }
