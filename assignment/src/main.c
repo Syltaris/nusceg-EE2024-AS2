@@ -342,17 +342,6 @@ void sseg_controller(void) {
 
 //toggles LEDs
 void rgbLED_controller(void) {
-//	if(temp_high_flag) {
-//		ledRed_set = ~ledRed_set;
-//	} else {
-//		ledRed_set = 0;
-//	}
-//
-//	if(movement_lowLight_flag) {
-//		ledBlue_set = ~ledBlue_set;
-//	} else {
-//		ledBlue_set = 0;
-//	}
 	rgbLED_set = ~rgbLED_set;
 	rgb_setLeds(rgbLED_mask & rgbLED_set);
 }
