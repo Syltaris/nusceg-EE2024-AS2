@@ -41,7 +41,8 @@ volatile uint32_t msTicks = 0; // counter for 1ms SysTicks
 /*** 7-segment display params ***/
 volatile int sseg_flag = 0;
 unsigned int timer2count = 0;
-int monitor_symbols[]  = {'0', '1', '2', '3', '4', '5', '6' ,'7' ,'8' ,'9' ,'A', 'B', 'C', 'D', 'E', 'F'};
+int monitor_symbols[] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A',
+		'B', 'C', 'D', 'E', 'F' };
 
 /*** ISL290003 light sensor params ***/
 uint32_t light_reading = 0;
@@ -72,10 +73,6 @@ uint8_t tempStr[80];
 /*** UART params ***/
 volatile int send_message_flag = 0;
 
-
-
-
-
 /*** protocols initialisers ***/
 static void init_GPIO(void) {
 	PINSEL_CFG_Type PinCfg;
@@ -89,10 +86,8 @@ static void init_GPIO(void) {
 	PINSEL_ConfigPin(&PinCfg);
 }
 
-
 //i2c enabler
-static void init_I2C2(void)
-{
+static void init_I2C2(void) {
 	PINSEL_CFG_Type PinCfg;
 
 	/* Initialize I2C2 pin connect */
@@ -111,8 +106,7 @@ static void init_I2C2(void)
 }
 
 //ssp enabler
-static void init_SSP(void)
-{
+static void init_SSP(void) {
 	SSP_CFG_Type SSP_ConfigStruct;
 	PINSEL_CFG_Type PinCfg;
 
@@ -148,110 +142,107 @@ static void init_SSP(void)
 }
 
 //uart1 pincfg
-void pinsel_uart1(void){
-    PINSEL_CFG_Type PinCfg;
-    PinCfg.Funcnum = 1;
-    PinCfg.Pinnum = 0;
-    PinCfg.Portnum = 15;
-    PINSEL_ConfigPin(&PinCfg);
-    PinCfg.Pinnum = 16;
-    PINSEL_ConfigPin(&PinCfg);
+void pinsel_uart1(void) {
+	PINSEL_CFG_Type PinCfg;
+	PinCfg.Funcnum = 1;
+	PinCfg.Pinnum = 0;
+	PinCfg.Portnum = 15;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Pinnum = 16;
+	PINSEL_ConfigPin(&PinCfg);
 }
 
 //uart3 pincfg
-void pinsel_uart3(void){
-    PINSEL_CFG_Type PinCfg;
-    PinCfg.Funcnum = 2;
-    PinCfg.Pinnum = 0;
-    PinCfg.Portnum = 0;
-    PINSEL_ConfigPin(&PinCfg);
-    PinCfg.Pinnum = 1;
-    PINSEL_ConfigPin(&PinCfg);
+void pinsel_uart3(void) {
+	PINSEL_CFG_Type PinCfg;
+	PinCfg.Funcnum = 2;
+	PinCfg.Pinnum = 0;
+	PinCfg.Portnum = 0;
+	PINSEL_ConfigPin(&PinCfg);
+	PinCfg.Pinnum = 1;
+	PINSEL_ConfigPin(&PinCfg);
 }
 
 //uart enabler
-void init_uart(void){
-    UART_CFG_Type uartCfg;
-    uartCfg.Baud_rate = 115200;
-    uartCfg.Databits = UART_DATABIT_8;
-    uartCfg.Parity = UART_PARITY_NONE;
-    uartCfg.Stopbits = UART_STOPBIT_1;
+void init_uart(void) {
+	UART_CFG_Type uartCfg;
+	uartCfg.Baud_rate = 115200;
+	uartCfg.Databits = UART_DATABIT_8;
+	uartCfg.Parity = UART_PARITY_NONE;
+	uartCfg.Stopbits = UART_STOPBIT_1;
 
-    //init uart3
-    pinsel_uart3();
-    UART_Init(LPC_UART3, &uartCfg);
-    UART_TxCmd(LPC_UART3, ENABLE);
+	//init uart3
+	pinsel_uart3();
+	UART_Init(LPC_UART3, &uartCfg);
+	UART_TxCmd(LPC_UART3, ENABLE);
 }
 
 //timer1 w/ 0.33s~ period
-static void init_timer1(){
+static void init_timer1() {
 
 	// default value of PCLK = CCLK/4
 	// CCLK is derived from PLL0 output signal / (CCLKSEL + 1) [CCLKCFG register]
 
-    LPC_SC->PCONP |= (1<<2);					/* Power ON Timer1 */
+	LPC_SC ->PCONP |= (1 << 2); /* Power ON Timer1 */
 
-    LPC_TIM1->MCR  = (1<<0) | (1<<1);     		/* Clear COUNT on MR0 match and Generate Interrupt */
-    LPC_TIM1->PR   = 0;      					/* Update COUNT every (value + 1) of PCLK  */
-    LPC_TIM1->MR0  = 8888888;                 	/* Value of COUNT that triggers interrupts */
-    LPC_TIM1->TCR  = (1 << 0);                 	/* Start timer by setting the Counter Enable */
+	LPC_TIM1 ->MCR = (1 << 0) | (1 << 1); /* Clear COUNT on MR0 match and Generate Interrupt */
+	LPC_TIM1 ->PR = 0; /* Update COUNT every (value + 1) of PCLK  */
+	LPC_TIM1 ->MR0 = 8888888; /* Value of COUNT that triggers interrupts */
+	LPC_TIM1 ->TCR = (1 << 0); /* Start timer by setting the Counter Enable */
 
-    NVIC_EnableIRQ(TIMER1_IRQn);				/* Enable Timer1 interrupt */
+	NVIC_EnableIRQ(TIMER1_IRQn); /* Enable Timer1 interrupt */
 
 }
 
 //timer2 w/ 1s~ period
-static void init_timer2(){
+static void init_timer2() {
 
 	// default value of PCLK = CCLK/4
 	// CCLK is derived from PLL0 output signal / (CCLKSEL + 1) [CCLKCFG register]
 
-    LPC_SC->PCONP |= (1<<22);					/* Power ON Timer2 */
+	LPC_SC ->PCONP |= (1 << 22); /* Power ON Timer2 */
 
-    LPC_TIM2->MCR  = (1<<0) | (1<<1);     		/* Clear COUNT on MR0 match and Generate Interrupt */
-    LPC_TIM2->PR   = 0;      					/* Update COUNT every (value + 1) of PCLK  */
-    LPC_TIM2->MR0  = 26666666;                 	/* Value of COUNT that triggers interrupts */
-    LPC_TIM2->TCR  = (1 << 0);                 	/* Start timer by setting the Counter Enable */
+	LPC_TIM2 ->MCR = (1 << 0) | (1 << 1); /* Clear COUNT on MR0 match and Generate Interrupt */
+	LPC_TIM2 ->PR = 0; /* Update COUNT every (value + 1) of PCLK  */
+	LPC_TIM2 ->MR0 = 26666666; /* Value of COUNT that triggers interrupts */
+	LPC_TIM2 ->TCR = (1 << 0); /* Start timer by setting the Counter Enable */
 
-    NVIC_EnableIRQ(TIMER2_IRQn);				/* Enable Timer2 interrupt */
+	NVIC_EnableIRQ(TIMER2_IRQn); /* Enable Timer2 interrupt */
 
 }
 
 void rgbLED_controller(void);
-void TIMER1_IRQHandler(void)
-{
+void TIMER1_IRQHandler(void) {
 	unsigned int isrMask;
 
-    isrMask = LPC_TIM1->IR;
-    LPC_TIM1->IR = isrMask;         /* Clear the Interrupt Bit by writing to the register */					// bitwise not
+	isrMask = LPC_TIM1 ->IR;
+	LPC_TIM1 ->IR = isrMask; /* Clear the Interrupt Bit by writing to the register */// bitwise not
 
-    rgbLED_controller();
+	rgbLED_controller();
 
-    led_array_flag = 1;
+	led_array_flag = 1;
 }
 
 void sseg_controller(void);
-void TIMER2_IRQHandler(void)
-{
+void TIMER2_IRQHandler(void) {
 	unsigned int isrMask;
 
-    isrMask = LPC_TIM2->IR;
-    LPC_TIM2->IR = isrMask;         /* Clear the Interrupt Bit by writing to the register */					// bitwise not
+	isrMask = LPC_TIM2 ->IR;
+	LPC_TIM2 ->IR = isrMask; /* Clear the Interrupt Bit by writing to the register */// bitwise not
 
-    sseg_flag = 1;
+	sseg_flag = 1;
 
-    if(timer2count == 5 || timer2count == 10 || timer2count == 15) {
-    	sample_sensors_flag = 1;
-    }
+	if (timer2count == 5 || timer2count == 10 || timer2count == 15) {
+		sample_sensors_flag = 1;
+	}
 
-    if(timer2count == 15) {
-    	send_message_flag = 1;
-    }
+	if (timer2count == 15) {
+		send_message_flag = 1;
+	}
 
 	sseg_controller(); // ! may be slow
+
 }
-
-
 
 /*** SysTick helper functions ***/
 void SysTick_Handler(void) {
@@ -261,7 +252,6 @@ void SysTick_Handler(void) {
 uint32_t getTicks(void) {
 	return msTicks;
 }
-
 
 /** light_sensor helper functions **/\
 
@@ -322,18 +312,16 @@ void init_interrupts() {
 	NVIC_ClearPendingIRQ(EINT3_IRQn);
 	NVIC_EnableIRQ(EINT3_IRQn); // Enable EINT3 interrupt
 
-
 	// EINT0
-	int * EXT_INT_Mode_Register = (int *)0x400fc148;
-	* EXT_INT_Mode_Register |= 1 << 0; // edge sensitive
-	int * EXT_INT_Polarity_Register = (int *)0x400fc14c;
-	* EXT_INT_Polarity_Register |= 0 << 0; // falling edge
+	int * EXT_INT_Mode_Register = (int *) 0x400fc148;
+	*EXT_INT_Mode_Register |= 1 << 0; // edge sensitive
+	int * EXT_INT_Polarity_Register = (int *) 0x400fc14c;
+	*EXT_INT_Polarity_Register |= 0 << 0; // falling edge
 
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
 	NVIC_EnableIRQ(EINT0_IRQn); // Enable EINT0 interrupt
 
 }
-
 
 //sets the sseg to the corresponding symbol
 void sseg_controller(void) {
@@ -365,23 +353,23 @@ void EINT0_IRQHandler(void) {
 
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
 	LPC_SC ->EXTINT = (1 << 0); /* Clear Interrupt Flag */
+
 }
 
 // EINT3 Interrupt Handler
-void EINT3_IRQHandler(void)
-{
+void EINT3_IRQHandler(void) {
 	// Determine if GPIO Interrupt P2.5 has occurred (ISL2900023)
-	if ((LPC_GPIOINT->IO2IntStatF>>5) & 0x1) {
+	if ((LPC_GPIOINT ->IO2IntStatF >> 5) & 0x1) {
 		//clear interrupts
-		LPC_GPIOINT->IO2IntClr = 1<<5; //clear GPIO interrupt
+		LPC_GPIOINT ->IO2IntClr = 1 << 5; //clear GPIO interrupt
 		light_clearIrqStatus(); //clear peripheral interrupt
 
 		//darkness detected
-		if(detect_darkness_flag == 1) {
+		if (detect_darkness_flag == 1) {
 
 			lightSensor_detectLight();
 			detect_darkness_flag = 0;
-		} else if(detect_darkness_flag == 0) {
+		} else if (detect_darkness_flag == 0) {
 
 			lightSensor_detectDarkness();
 			detect_darkness_flag = 1;
@@ -391,17 +379,16 @@ void EINT3_IRQHandler(void)
 	}
 	// Determine if GPIO Interrupt P0.3 has occurred (MMA7455 Accelerometer)
 	if ((LPC_GPIOINT ->IO0IntStatR >> 3) & 0x1) {
-	  movement_detected_flag = 1;
+		movement_detected_flag = 1;
 
-	  lastMotionDetectedTicks = getTicks();
+		lastMotionDetectedTicks = getTicks();
 
-	  LPC_GPIOINT->IO0IntClr = 1<<3;
-	  acc_intClr();
-	  printf("acc triggered\n");
+		LPC_GPIOINT ->IO0IntClr = 1 << 3;
+		acc_intClr();
+		printf("acc triggered\n");
 	}
 
 }
-
 
 /*** OLED functions for monitor mode ***/
 
@@ -440,10 +427,13 @@ void prep_monitorMode(void) {
 	init_timer1();
 	init_timer2();
 
-	monitor_oled_init();
+//	monitor_oled_init();
 	sseg_controller();
 
 	UART_SendString(LPC_UART3, "Entering MONITOR Mode.\r\n");
+
+	oled_putChar(0, 0, 'A', OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putBigChar(40, 12, 'B', OLED_COLOR_WHITE, OLED_COLOR_BLACK, 3);
 }
 
 //reset devices and disable timers
@@ -470,68 +460,60 @@ void prep_passiveMode(void) {
 	rgbLED_mask = 0x00;
 }
 
-
-
-
 //sample the accelerometer, light, temperature sensors
 void sample_sensors(void) {
 	//poll light sensor
 	light_reading = light_read();
 	//poll acc sensor
 	acc_setMode(ACC_MODE_MEASURE);
+	acc_setRange(ACC_RANGE_2G);
 	acc_read(&accX, &accY, &accZ);
 	acc_setMode(ACC_MODE_LEVEL);
+	acc_setRange(ACC_RANGE_8G);
 
 	//poll temp sensor
 	temperature_reading = temp_read();
 }
 
-
-
-
 /*** Data transmitting functions ***/
 
-int format_string(char * string, char * title, float value){
- return sprintf(string, "%s_%s%.2f", string, title, value);
+int format_string(char * string, char * title, float value) {
+	return sprintf(string, "%s_%s%.2f", string, title, value);
 }
 //transmit message through UART
 void transmitData(char* msg) {
-	if(temp_high_flag == 1) {
+	if (((rgbLED_mask & RGB_RED) >> 0) == 1) {
 		UART_SendString(LPC_UART3, "Fire was Detected.\r\n");
 	}
 
-	if(movement_lowLight_flag == 1) {
+	if (((rgbLED_mask & RGB_BLUE) >> 1) == 1) {
 		UART_SendString(LPC_UART3, "Movement in darkness was Detected.\r\n");
 	}
 
 	static uint8_t transmitCount = 0;
 
-    char string[50];
+	char string[50];
 	sprintf(string, "%d_-", transmitCount++);
 
-	format_string(string, "T", temperature_reading/10.0);
+	format_string(string, "T", temperature_reading / 10.0);
 	format_string(string, "L", light_reading);
-	format_string(string, "AX", accX-accInitX);
-	format_string(string, "AY", accY-accInitY);
-	format_string(string, "AZ", accZ-accInitZ);
+	format_string(string, "AX", accX - accInitX);
+	format_string(string, "AY", accY - accInitY);
+	format_string(string, "AZ", accZ - accInitZ);
 
 	sprintf(string, "%s\r\n", string);
 
-    UART_SendString(LPC_UART3, &string);
+	UART_SendString(LPC_UART3, &string);
 }
 
-
-
-
-int main (void) {
+int main(void) {
 	//SysTick init
-	SysTick_Config(SystemCoreClock/1000);
+	SysTick_Config(SystemCoreClock / 1000);
 
 	init_protocols();
 	init_peripherals();
 	init_GPIO();
 	init_interrupts();
-
 
 	//hardware setup
 	light_setIrqInCycles(LIGHT_CYCLE_1);
@@ -543,45 +525,46 @@ int main (void) {
 	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
 
 	//main execution loop
-	while(1) {
+	while (1) {
 		//stable, passive mode
-		if(mode_flag == 0) {
+		if (mode_flag == 0) {
 			prep_passiveMode();
-			while(mode_flag == 0); //wait for MONITOR to be enabled
+			while (mode_flag == 0)
+				; //wait for MONITOR to be enabled
 			prep_monitorMode();
 		}
 
-		if(led_array_flag && mode_flag) {
+		if (led_array_flag && mode_flag) {
 			pca9532_setLeds(led_set, 0xFFFF);  //moves onLed down array
 			led_set = led_mov_dir ? led_set >> 1 : led_set << 1;
 
 			//changes direction when at the ends
-			if(led_set == 0x0001) {
+			if (led_set == 0x0001) {
 				led_mov_dir = 0;
-			} else if(led_set == 0x8000) {
+			} else if (led_set == 0x8000) {
 				led_mov_dir = 1;
 			}
 			led_array_flag = 0;
 		}
 
 		//main tasks
-		if(sample_sensors_flag) {
+		if (sample_sensors_flag) {
 			sample_sensors();
 			displaySampledData_oled();
 			sample_sensors_flag = 0;
 		}
 
 		//if high temperature is detected
-		if(temperature_reading >= (TEMP_HIGH_WARNING - DEBUG_HEAT_OFFSET)) {
+		if (temperature_reading >= (TEMP_HIGH_WARNING - DEBUG_HEAT_OFFSET)) {
 			rgbLED_mask |= RGB_RED;
 		}
 
 		//if MOVEMENT_DETECTED
-		if(movement_detected_flag) {
+		if (movement_detected_flag) {
 			//if no movement in darkness after set duration, disable movement flag
-			if(getTicks() > lastMotionDetectedTicks + 20) {
+			if (getTicks() > lastMotionDetectedTicks + 20) {
 				//check for prolonged movement detection, if so, set flag
-				if(!detect_darkness_flag) {
+				if (!detect_darkness_flag) {
 					rgbLED_mask |= RGB_BLUE; //toggle blue led mask on
 				} else {
 					movement_detected_flag = 0;
@@ -590,7 +573,7 @@ int main (void) {
 		}
 
 		//if need to transmit
-		if(send_message_flag) {
+		if (send_message_flag) {
 			char* msg = "HELLCOME \n";
 			transmitData(msg);
 
@@ -600,7 +583,4 @@ int main (void) {
 
 	return 0;
 }
-
-
-
 
