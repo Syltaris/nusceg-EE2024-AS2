@@ -77,12 +77,12 @@ volatile int send_message_flag = 0;
 static void init_GPIO(void) {
 	PINSEL_CFG_Type PinCfg;
 
-	/* Initialize SW3 pin connect */
-	PinCfg.Funcnum = 1;
-	PinCfg.OpenDrain = 0;
-	PinCfg.Pinnum = 10;
-	PinCfg.Portnum = 2;
+	/* Initialize SW3 pin connect to GPIO P2.11 */
 	PinCfg.Pinmode = 0;
+	PinCfg.OpenDrain = 0;
+	PinCfg.Portnum = 2;
+	PinCfg.Pinnum = 11;
+	PinCfg.Funcnum = 1;
 	PINSEL_ConfigPin(&PinCfg);
 }
 
@@ -318,6 +318,9 @@ void init_interrupts() {
 	int * EXT_INT_Polarity_Register = (int *) 0x400fc14c;
 	*EXT_INT_Polarity_Register |= 0 << 0; // falling edge
 
+	// EINT1
+
+
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
 	NVIC_EnableIRQ(EINT0_IRQn); // Enable EINT0 interrupt
 
@@ -336,6 +339,8 @@ void rgbLED_controller(void) {
 }
 
 void EINT0_IRQHandler(void) {
+
+
 	printf("Button Liao\n");
 
 	mode_flag = !mode_flag;
@@ -392,6 +397,27 @@ void monitor_oled_init(void) {
 	oled_putString(2, 52, "ACCZ: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 }
 
+void monitor_oled_temp(void) {
+	oled_clearScreen(OLED_COLOR_BLACK); //clear OLED
+
+	oled_putString(20, 1, "TEMP", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_rect(0, 10, 95, 62, OLED_COLOR_WHITE);
+}
+
+void monitor_oled_light(void) {
+	oled_clearScreen(OLED_COLOR_BLACK); //clear OLED
+
+	oled_putString(20, 1, "LUX", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_rect(0, 10, 95, 62, OLED_COLOR_WHITE);
+}
+
+void monitor_oled_acc(void) {
+	oled_clearScreen(OLED_COLOR_BLACK); //clear OLED
+
+	oled_putString(20, 1, "ACC", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_rect(0, 10, 95, 62, OLED_COLOR_WHITE);
+}
+
 //update sampled data on oled
 void displaySampledData_oled(void) {
 	//update OLED
@@ -416,7 +442,7 @@ void prep_monitorMode(void) {
 	init_timer1();
 	init_timer2();
 
-//	monitor_oled_init();
+	monitor_oled_init();
 	sseg_controller();
 
 	UART_SendString(LPC_UART3, "Entering MONITOR Mode.\r\n");
@@ -470,7 +496,7 @@ int format_string(char * string, char * title, float value) {
 	return sprintf(string, "%s_%s%.2f", string, title, value);
 }
 //transmit message through UART
-void transmitData(char* msg) {
+void transmitData() {
 	if (((rgbLED_mask & RGB_RED) >> 0) == 1) {
 		UART_SendString(LPC_UART3, "Fire was Detected.\r\n");
 	}
@@ -495,7 +521,7 @@ void transmitData(char* msg) {
 	UART_SendString(LPC_UART3, &string);
 }
 
-int main(void) {
+void initial_setup(int8_t accInitX, int8_t accInitY, int8_t accInitZ) {
 	//SysTick init
 	SysTick_Config(SystemCoreClock / 1000);
 
@@ -512,14 +538,16 @@ int main(void) {
 	acc_setRange(ACC_RANGE_8G);
 	acc_config_mode_LEVEL();
 	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
+}
 
+int main(void) {
+	initial_setup(accInitX, accInitY, accInitZ);
 	//main execution loop
 	while (1) {
 		//stable, passive mode
 		if (mode_flag == 0) {
 			prep_passiveMode();
-			while (mode_flag == 0)
-				; //wait for MONITOR to be enabled
+			while (mode_flag == 0); //wait for MONITOR to be enabled
 			prep_monitorMode();
 		}
 
@@ -563,9 +591,7 @@ int main(void) {
 
 		//if need to transmit
 		if (send_message_flag) {
-			char* msg = "HELLCOME \n";
-			transmitData(msg);
-
+			transmitData();
 			send_message_flag = 0;
 		}
 	}
