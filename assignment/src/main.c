@@ -75,8 +75,7 @@ uint8_t tempStr[80];
 volatile uint8_t send_message_flag = 0;
 
 /*** Rotary Switch params ***/
-volatile int font_size = 1;
-volatile int prev_state = 0;
+volatile uint8_t font_size = 1;
 volatile uint8_t rotary_flag_0 = 0;
 volatile uint8_t rotary_flag_1 = 0;
 
@@ -391,7 +390,7 @@ void check_rotary_switch(void) {
 		// clockwise
 		if (rotary_flag_0 && rotary_flag_1) {
 
-			printf("cw\n");
+			printf("cw %u\n", font_size++);
 
 			rotary_flag_0 = 0;
 			rotary_flag_1 = 0;
@@ -403,7 +402,7 @@ void check_rotary_switch(void) {
 		// anti-clockwise
 		if (rotary_flag_0 && rotary_flag_1) {
 
-			printf("acw\n");
+			printf("acw %u\n", font_size--);
 
 			rotary_flag_0 = 0;
 			rotary_flag_1 = 0;
@@ -490,6 +489,24 @@ void displaySampledData_oled(void) {
 	oled_putString(35, 52, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
 }
+
+//helper functions to display values for diff screens
+void displayTempLarge_oled(void) {
+	sprintf(tempStr, "%.2f   ", temperature_reading / 10.0);
+	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+}
+
+void displayLightLarge_oled(void) {
+	sprintf(tempStr, "%u  ", light_reading);
+	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+}
+
+void displayAccLarge_oled(void) {
+	sprintf(tempStr, "%d   ", accX - accInitX);
+	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+}
+
+
 
 void prep_monitorMode(void) {
 	//un-reset clocks
@@ -621,10 +638,25 @@ int main(void) {
 		//main tasks
 		if (sample_sensors_flag) {
 			sample_sensors();
-			displaySampledData_oled();
 			sample_sensors_flag = 0;
-		}
 
+			//display data to relevant screen
+			switch(oled_page_state) {
+				case 0:
+					displaySampledData_oled();
+					break;
+				case 1:
+					displayTempLarge_oled();
+					break;
+				case 2:
+					displayLightLarge_oled();
+					break;
+				case 3:
+					displayAccLarge_oled();
+					break;
+			}
+
+		}
 		//if high temperature is detected
 		if (temperature_reading >= (TEMP_HIGH_WARNING - DEBUG_HEAT_OFFSET)) {
 			rgbLED_mask |= RGB_RED;

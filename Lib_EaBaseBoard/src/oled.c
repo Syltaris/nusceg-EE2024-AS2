@@ -900,3 +900,21 @@ void oled_putString(uint8_t x, uint8_t y, uint8_t *pStr, oled_color_t fb,
   }
   return;
 }
+
+void oled_putBigString(uint8_t x, uint8_t y, uint8_t *pStr, oled_color_t fb,
+        oled_color_t bg, uint8_t size)
+{
+  while(1)
+  {
+      if( (*pStr)=='\0' )
+      {
+          break;
+      }
+      if( oled_putBigChar(x, y, *pStr++, fb, bg, size) == 0 )
+      {
+        break;
+    }
+    x += 6;
+  }
+  return;
+}
