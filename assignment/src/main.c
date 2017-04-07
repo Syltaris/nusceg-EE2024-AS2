@@ -31,64 +31,70 @@ static uint8_t rgbLED_set = 0x03;
 
 static uint32_t led_set = 0x0001; //for array
 
-static volatile int red_led_flag = 0;
-static volatile int led_array_flag = 0;
-static int led_mov_dir = 0; // 0 for <<, 1 for >>
+static volatile uint8_t red_led_flag = 0;
+static volatile uint8_t led_array_flag = 0;
+static uint8_t led_mov_dir = 0; // 0 for <<, 1 for >>
 
 /*** timer params ***/
 volatile uint32_t msTicks = 0; // counter for 1ms SysTicks
 
 /*** 7-segment display params ***/
-volatile int sseg_flag = 0;
+volatile uint8_t sseg_flag = 0;
 unsigned int timer2count = 0;
 int monitor_symbols[] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A',
 		'B', 'C', 'D', 'E', 'F' };
 
 /*** ISL290003 light sensor params ***/
 uint32_t light_reading = 0;
-int movement_lowLight_flag = 0;
-volatile int detect_darkness_flag = 1; // 0 also means that darkness is detected
+uint8_t movement_lowLight_flag = 0;
+volatile uint8_t detect_darkness_flag = 1; // 0 also means that darkness is detected
 
 /*** MMA7455 accelerometer sensor params ***/
 int8_t accInitX, accInitY, accInitZ; //for offsetting
 volatile int8_t accX, accY, accZ;
 int8_t accOldX, accOldY, accOldZ;
-volatile int movement_detected_flag = 0;
+volatile uint8_t movement_detected_flag = 0;
 volatile uint32_t lastMotionDetectedTicks = 0;
 
 /*** temperature sensor ***/
 int32_t temperature_reading = 0;
 const int32_t TEMP_HIGH_WARNING = 450;
-int temp_high_flag = 0;
+uint8_t temp_high_flag = 0;
 
 /*** stable, monitor mode flag ***/
-volatile int mode_flag = 0; //1 - monitor, 0 - passive
+volatile uint8_t mode_flag = 0; //1 - monitor, 0 - passive
 
 /*** flag to sample light and accelerometer sensors ***/
-volatile int sample_sensors_flag = 0;
+volatile uint8_t sample_sensors_flag = 0;
 
 /*** OLED params ***/
+volatile uint8_t oled_page_state = 0; //0 - default, 1 - temp, 2 - lux, 3 - acc
 uint8_t tempStr[80];
 
 /*** UART params ***/
-volatile int send_message_flag = 0;
+volatile uint8_t send_message_flag = 0;
 
 /*** Rotary Switch params ***/
 volatile int font_size = 1;
 volatile int prev_state = 0;
-volatile int rotary_flag_0 = 0;
-volatile int rotary_flag_1 = 0;
+volatile uint8_t rotary_flag_0 = 0;
+volatile uint8_t rotary_flag_1 = 0;
+
+
 
 /*** protocols initialisers ***/
 static void init_GPIO(void) {
 	PINSEL_CFG_Type PinCfg;
 
-	/* Initialize SW3 pin connect to GPIO P2.11 */
+	/* Initialize SW4 pin connect to GPIO P2.11 (EINT1)*/
 	PinCfg.Pinmode = 0;
 	PinCfg.OpenDrain = 0;
 	PinCfg.Portnum = 2;
 	PinCfg.Pinnum = 11;
 	PinCfg.Funcnum = 1;
+	PINSEL_ConfigPin(&PinCfg);
+	/* Initialize SW4 pin connect to GPIO P2.10 (EINT0) */
+	PinCfg.Pinnum = 10;
 	PINSEL_ConfigPin(&PinCfg);
 }
 
@@ -303,6 +309,7 @@ void init_interrupts() {
 
 	//switches
 //	LPC_GPIOINT ->IO2IntEnF |= 1 << 10; // enable SW3
+//	LPC_GPIOINT ->IO2IntEnF |= 1 << 11; // enable SW4
 
 	//light sensor
 	LPC_GPIOINT ->IO2IntClr |= 1 << 5;
@@ -321,20 +328,23 @@ void init_interrupts() {
 	LPC_GPIOINT ->IO0IntEnR |= 1 << 24;
 	LPC_GPIOINT ->IO0IntEnR |= 1 << 25;
 
-	NVIC_ClearPendingIRQ(EINT3_IRQn);
-	NVIC_EnableIRQ(EINT3_IRQn); // Enable EINT3 interrupt
-
-	// EINT0
+	//configuring EINTx (0,1)
 	int * EXT_INT_Mode_Register = (int *) 0x400fc148;
 	*EXT_INT_Mode_Register |= 1 << 0; // edge sensitive
+	*EXT_INT_Mode_Register |= 1 << 1;
 	int * EXT_INT_Polarity_Register = (int *) 0x400fc14c;
 	*EXT_INT_Polarity_Register |= 0 << 0; // falling edge
-
-	// EINT1
+	*EXT_INT_Polarity_Register |= 0 << 1;
 
 
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
-	NVIC_EnableIRQ(EINT0_IRQn); // Enable EINT0 interrupt
+	NVIC_ClearPendingIRQ(EINT1_IRQn);
+	NVIC_ClearPendingIRQ(EINT3_IRQn);
+
+	NVIC_EnableIRQ(EINT0_IRQn);
+	NVIC_EnableIRQ(EINT1_IRQn);
+	NVIC_EnableIRQ(EINT3_IRQn);
+
 }
 
 //sets the sseg to the corresponding symbol
@@ -350,16 +360,27 @@ void rgbLED_controller(void) {
 }
 
 void EINT0_IRQHandler(void) {
-
-
-	printf("Button Liao\n");
+	printf("Button SW3 Liao\n");
 
 	mode_flag = !mode_flag;
+	oled_putBigChar(40, 12, 'B', OLED_COLOR_WHITE, OLED_COLOR_BLACK, 3);
+
 
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
 	LPC_SC ->EXTINT = (1 << 0); /* Clear Interrupt Flag */
 
 }
+
+void EINT1_IRQHandler(void) {
+	printf("Button SW4 Liao\n");
+
+	mode_flag = !mode_flag;
+
+	NVIC_ClearPendingIRQ(EINT1_IRQn);
+	LPC_SC ->EXTINT = (1 << 1); /* Clear Interrupt Flag */
+}
+
+
 
 void check_rotary_switch(void) {
 	// GPIO interrupts on P0.24, P0.25
@@ -370,7 +391,7 @@ void check_rotary_switch(void) {
 		// clockwise
 		if (rotary_flag_0 && rotary_flag_1) {
 
-			printf("cw");
+			printf("cw\n");
 
 			rotary_flag_0 = 0;
 			rotary_flag_1 = 0;
@@ -382,7 +403,7 @@ void check_rotary_switch(void) {
 		// anti-clockwise
 		if (rotary_flag_0 && rotary_flag_1) {
 
-			printf("acw");
+			printf("acw\n");
 
 			rotary_flag_0 = 0;
 			rotary_flag_1 = 0;
@@ -424,7 +445,6 @@ void EINT3_IRQHandler(void) {
 	}
 
 	check_rotary_switch();
-
 }
 
 /*** OLED functions for monitor mode ***/
@@ -441,24 +461,18 @@ void monitor_oled_init(void) {
 }
 
 void monitor_oled_temp(void) {
-	oled_clearScreen(OLED_COLOR_BLACK); //clear OLED
-
-	oled_putString(20, 1, "TEMP", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_rect(0, 10, 95, 62, OLED_COLOR_WHITE);
+	oled_putString(18, 1, "TEMP", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_line(0, 10, 95, 11, OLED_COLOR_WHITE);
 }
 
 void monitor_oled_light(void) {
-	oled_clearScreen(OLED_COLOR_BLACK); //clear OLED
-
 	oled_putString(20, 1, "LUX", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_rect(0, 10, 95, 62, OLED_COLOR_WHITE);
+	oled_line(0, 10, 95, 11, OLED_COLOR_WHITE);
 }
 
 void monitor_oled_acc(void) {
-	oled_clearScreen(OLED_COLOR_BLACK); //clear OLED
-
 	oled_putString(20, 1, "ACC", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_rect(0, 10, 95, 62, OLED_COLOR_WHITE);
+	oled_line(0, 10, 95, 11, OLED_COLOR_WHITE);
 }
 
 //update sampled data on oled
@@ -489,9 +503,6 @@ void prep_monitorMode(void) {
 	sseg_controller();
 
 	UART_SendString(LPC_UART3, "Entering MONITOR Mode.\r\n");
-
-	oled_putChar(0, 0, 'A', OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_putBigChar(40, 12, 'B', OLED_COLOR_WHITE, OLED_COLOR_BLACK, 3);
 }
 
 //reset devices and disable timers
@@ -582,16 +593,6 @@ void initial_setup(int8_t accInitX, int8_t accInitY, int8_t accInitZ) {
 	acc_config_mode_LEVEL();
 	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
 }
-	// test rotary switch values
-	while (1) {
-		int temp = (GPIO_ReadValue(0) >> 24) & 0x1;
-		printf("%d\n", temp);
-//		temp = (GPIO_ReadValue(0) >> 25) & 0x1;
-//		printf("%d\n", temp);
-		int i;
-		for (i = 0; i < 1000000; i++)
-			;
-	}
 
 int main(void) {
 	initial_setup(accInitX, accInitY, accInitZ);
