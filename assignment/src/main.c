@@ -363,8 +363,6 @@ void EINT0_IRQHandler(void) {
 	printf("Button SW3 Liao\n");
 
 	mode_flag = !mode_flag;
-	oled_putBigChar(40, 12, 'B', OLED_COLOR_WHITE, OLED_COLOR_BLACK, 3);
-
 
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
 	LPC_SC ->EXTINT = (1 << 0); /* Clear Interrupt Flag */
@@ -529,17 +527,21 @@ void prep_passiveMode(void) {
 	rgbLED_mask = 0x00;
 }
 
+void read_acc(int8_t* accX, int8_t* accY, int8_t* accZ) {
+	//poll acc sensor
+	acc_setMode(ACC_MODE_MEASURE);
+	acc_setRange(ACC_RANGE_2G);
+	acc_read(accX, accY, accZ);
+	acc_setMode(ACC_MODE_LEVEL);
+	acc_setRange(ACC_RANGE_8G);
+}
+
 //sample the accelerometer, light, temperature sensors
 void sample_sensors(void) {
 	//poll light sensor
 	light_reading = light_read();
 	//poll acc sensor
-	acc_setMode(ACC_MODE_MEASURE);
-	acc_setRange(ACC_RANGE_2G);
-	acc_read(&accX, &accY, &accZ);
-	acc_setMode(ACC_MODE_LEVEL);
-	acc_setRange(ACC_RANGE_8G);
-
+	read_acc(&accX, &accY, &accZ);
 	//poll temp sensor
 	temperature_reading = temp_read();
 }
@@ -575,7 +577,7 @@ void transmitData() {
 	UART_SendString(LPC_UART3, &string);
 }
 
-void initial_setup(int8_t accInitX, int8_t accInitY, int8_t accInitZ) {
+void initial_setup(int8_t* accInitX, int8_t* accInitY, int8_t* accInitZ) {
 	//SysTick init
 	SysTick_Config(SystemCoreClock / 1000);
 
@@ -588,14 +590,12 @@ void initial_setup(int8_t accInitX, int8_t accInitY, int8_t accInitZ) {
 	light_setIrqInCycles(LIGHT_CYCLE_1);
 	light_enable(); //enable light sensor
 	oled_clearScreen(OLED_COLOR_BLACK); //clear oled
-	acc_setMode(ACC_MODE_LEVEL); //configure for interrupt
-	acc_setRange(ACC_RANGE_8G);
-	acc_config_mode_LEVEL();
-	acc_read(&accInitX, &accInitY, &accInitZ); //initialize base acc params
+	read_acc(accInitX, accInitY, accInitZ);
+	acc_config_mode_LEVEL(); //ready for interrupt
 }
 
 int main(void) {
-	initial_setup(accInitX, accInitY, accInitZ);
+	initial_setup(&accInitX, &accInitY, &accInitZ);
 	//main execution loop
 	while (1) {
 		//stable, passive mode
