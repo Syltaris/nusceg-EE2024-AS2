@@ -69,13 +69,14 @@ volatile uint8_t sample_sensors_flag = 0;
 
 /*** OLED params ***/
 volatile uint8_t oled_page_state = 0; //0 - default, 1 - temp, 2 - lux, 3 - acc
+volatile uint8_t reinit_screen_flag = 0;
 uint8_t tempStr[80];
 
 /*** UART params ***/
 volatile uint8_t send_message_flag = 0;
 
 /*** Rotary Switch params ***/
-volatile uint8_t font_size = 1;
+volatile uint8_t font_size = 2;
 volatile uint8_t rotary_flag_0 = 0;
 volatile uint8_t rotary_flag_1 = 0;
 
@@ -327,6 +328,13 @@ void init_interrupts() {
 	LPC_GPIOINT ->IO0IntEnR |= 1 << 24;
 	LPC_GPIOINT ->IO0IntEnR |= 1 << 25;
 
+	// joystick interrupts
+	LPC_GPIOINT ->IO0IntEnF |= 1 << 15;
+	LPC_GPIOINT ->IO0IntEnF |= 1 << 16;
+	LPC_GPIOINT ->IO0IntEnF |= 1 << 17;
+	LPC_GPIOINT ->IO2IntEnF |= 1 << 3;
+	LPC_GPIOINT ->IO2IntEnF |= 1 << 4;
+
 	//configuring EINTx (0,1)
 	int * EXT_INT_Mode_Register = (int *) 0x400fc148;
 	*EXT_INT_Mode_Register |= 1 << 0; // edge sensitive
@@ -362,7 +370,7 @@ void EINT0_IRQHandler(void) {
 	printf("Button SW3 Liao\n");
 
 	mode_flag = !mode_flag;
-	oled_putBigChar(40, 12, 'B', OLED_COLOR_WHITE, OLED_COLOR_BLACK, 3);
+//	oled_putBigChar(40, 12, 'B', OLED_COLOR_WHITE, OLED_COLOR_BLACK, 3);
 
 
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
@@ -411,6 +419,39 @@ void check_rotary_switch(void) {
 	}
 }
 
+void check_joystick(void) {
+	// Determine whether GPIO Interrupt P2.10 has occurred
+	if ((LPC_GPIOINT ->IO0IntStatF >> 15) & 0x1) {
+//		y++;
+		LPC_GPIOINT ->IO0IntClr = 1 << 15;
+	}
+	if ((LPC_GPIOINT ->IO0IntStatF >> 16) & 0x1) {
+//		x++;
+		reinit_screen_flag = 1;
+		oled_page_state = (oled_page_state + 1) % 4;
+
+		LPC_GPIOINT ->IO0IntClr = 1 << 16;
+	}
+	if ((LPC_GPIOINT ->IO0IntStatF >> 17) & 0x1) {
+		// centre button
+
+
+		LPC_GPIOINT ->IO0IntClr = 1 << 17;
+	}
+	if ((LPC_GPIOINT ->IO2IntStatF >> 3) & 0x1) {
+//		y--;
+		LPC_GPIOINT ->IO2IntClr = 1 << 3;
+	}
+	if ((LPC_GPIOINT ->IO2IntStatF >> 4) & 0x1) {
+//		x--;
+		reinit_screen_flag = 1;
+
+		oled_page_state = (oled_page_state == 0 ? 3 : oled_page_state - 1);
+
+		LPC_GPIOINT ->IO2IntClr = 1 << 4;
+	}
+}
+
 // EINT3 Interrupt Handler
 void EINT3_IRQHandler(void) {
 	// Determine if GPIO Interrupt P2.5 has occurred (ISL2900023)
@@ -444,6 +485,7 @@ void EINT3_IRQHandler(void) {
 	}
 
 	check_rotary_switch();
+	check_joystick();
 }
 
 /*** OLED functions for monitor mode ***/
@@ -460,17 +502,17 @@ void monitor_oled_init(void) {
 }
 
 void monitor_oled_temp(void) {
-	oled_putString(18, 1, "TEMP", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(28, 1, "TEMP", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_line(0, 10, 95, 11, OLED_COLOR_WHITE);
 }
 
 void monitor_oled_light(void) {
-	oled_putString(20, 1, "LUX", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(30, 1, "LUX", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_line(0, 10, 95, 11, OLED_COLOR_WHITE);
 }
 
 void monitor_oled_acc(void) {
-	oled_putString(20, 1, "ACC", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(30, 1, "ACC", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_line(0, 10, 95, 11, OLED_COLOR_WHITE);
 }
 
@@ -487,23 +529,28 @@ void displaySampledData_oled(void) {
 	oled_putString(35, 42, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	sprintf(tempStr, "%d  ", accZ - accInitZ);
 	oled_putString(35, 52, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-
 }
 
 //helper functions to display values for diff screens
 void displayTempLarge_oled(void) {
 	sprintf(tempStr, "%.2f   ", temperature_reading / 10.0);
-	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+//	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
 }
 
 void displayLightLarge_oled(void) {
 	sprintf(tempStr, "%u  ", light_reading);
-	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+//	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
 }
 
 void displayAccLarge_oled(void) {
 	sprintf(tempStr, "%d   ", accX - accInitX);
-	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+//	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
 }
 
 
@@ -541,6 +588,9 @@ void prep_passiveMode(void) {
 	temp_high_flag = 0;
 	detect_darkness_flag = 1;
 	movement_lowLight_flag = 0;
+
+	//reset page
+	oled_page_state = 0;
 
 	//reset RGB flag
 	rgbLED_mask = 0x00;
@@ -635,6 +685,28 @@ int main(void) {
 			led_array_flag = 0;
 		}
 
+		//init the screens
+		if(reinit_screen_flag) {
+			oled_clearScreen(OLED_COLOR_BLACK);
+
+			switch(oled_page_state) {
+				case 0:
+					monitor_oled_init();
+					break;
+				case 1:
+					monitor_oled_temp();
+					break;
+				case 2:
+					monitor_oled_light();
+					break;
+				case 3:
+					monitor_oled_acc();
+					break;
+			}
+
+			reinit_screen_flag = 0;
+		}
+
 		//main tasks
 		if (sample_sensors_flag) {
 			sample_sensors();
@@ -655,8 +727,8 @@ int main(void) {
 					displayAccLarge_oled();
 					break;
 			}
-
 		}
+
 		//if high temperature is detected
 		if (temperature_reading >= (TEMP_HIGH_WARNING - DEBUG_HEAT_OFFSET)) {
 			rgbLED_mask |= RGB_RED;
