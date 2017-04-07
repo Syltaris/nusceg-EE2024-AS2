@@ -826,6 +826,63 @@ uint8_t oled_putChar(uint8_t x, uint8_t y, uint8_t ch, oled_color_t fb, oled_col
     return( 1 );
 }
 
+// fb == front, bg == background
+uint8_t oled_putBigChar(uint8_t x, uint8_t y, uint8_t ch, oled_color_t fb, oled_color_t bg, uint8_t size)
+{
+    unsigned char data = 0;
+    unsigned char i = 0, j = 0;
+
+    oled_color_t color = OLED_COLOR_BLACK;
+
+    if((x >= (OLED_DISPLAY_WIDTH - 8)) || (y >= (OLED_DISPLAY_HEIGHT - 8)) )
+    {
+        return 0;
+    }
+
+    if( (ch < 0x20) || (ch > 0x7f) )
+    {
+        ch = 0x20;      /* unknown character will be set to blank */
+    }
+
+    ch -= 0x20;
+    for(i=0; i<8; i++)
+    {
+        data = font5x7[ch][i];
+        for(j=0; j<6; j++)
+        {
+            if( (data&font_mask[j])==0 )
+            {
+                color = bg;
+            }
+            else
+            {
+                color = fb;
+            }
+
+            if (i == 0 && j == 0){
+            	oled_putBigPixel(x, y, color, size);
+            }
+            else {
+            	oled_putBigPixel(x + (j * size), y + (i * size), color, size);
+            }
+            x++;
+        }
+        y++;
+        x -= 6;
+    }
+    return( 1 );
+}
+
+void oled_putBigPixel(uint8_t x, uint8_t y, oled_color_t color, uint8_t size)
+{
+	int i, j;
+	for (i = 0; i < size; i++){
+		for (j = 0; j < size; j++){
+			oled_putPixel(x + i, y + j, color);
+		}
+	}
+}
+
 void oled_putString(uint8_t x, uint8_t y, uint8_t *pStr, oled_color_t fb,
         oled_color_t bg)
 {

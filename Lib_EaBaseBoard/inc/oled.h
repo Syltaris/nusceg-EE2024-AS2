@@ -29,6 +29,9 @@ void oled_clearScreen(oled_color_t color);
 void oled_putString(uint8_t x, uint8_t y, uint8_t *pStr, oled_color_t fb,
         oled_color_t bg);
 uint8_t oled_putChar(uint8_t x, uint8_t y, uint8_t ch, oled_color_t fb, oled_color_t bg);
+uint8_t oled_putBigChar(uint8_t x, uint8_t y, uint8_t ch, oled_color_t fb, oled_color_t bg, uint8_t size);
+void oled_putBigPixel(uint8_t x, uint8_t y, oled_color_t color, uint8_t size);
+
 
 
 #endif /* end __OLED_H */
