@@ -51,7 +51,7 @@ volatile uint8_t detect_darkness_flag = 1; // 0 also means that darkness is dete
 
 /*** MMA7455 accelerometer sensor params ***/
 int8_t accInitX, accInitY, accInitZ; //for offsetting
-volatile int8_t accX, accY, accZ;
+int8_t accX, accY, accZ;
 int8_t accOldX, accOldY, accOldZ;
 volatile uint8_t movement_detected_flag = 0;
 volatile uint32_t lastMotionDetectedTicks = 0;
@@ -220,9 +220,9 @@ void TIMER1_IRQHandler(void) {
 	isrMask = LPC_TIM1 ->IR;
 	LPC_TIM1 ->IR = isrMask; /* Clear the Interrupt Bit by writing to the register */// bitwise not
 
+	rgbLED_flag = 1;
 //	rgbLED_controller();
 
-	rgbLED_flag = 1;
 	led_array_flag = 1;
 }
 
@@ -296,20 +296,12 @@ void init_interrupts() {
 	init_timer1(); //0.33s period clock
 	init_timer2(); //1s period clock
 
-	//switches
-//	LPC_GPIOINT ->IO2IntEnF |= 1 << 10; // enable SW3
-//	LPC_GPIOINT ->IO2IntEnF |= 1 << 11; // enable SW4
-
 	//light sensor
 	LPC_GPIOINT ->IO2IntClr |= 1 << 5;
 	LPC_GPIOINT ->IO2IntEnF |= 1 << 5; // enable light interrupt
 	light_clearIrqStatus();
 	//configure default light threshold
 	lightSensor_detectDarkness();
-
-	// accelerometer pio1_8 P0.3
-//	LPC_GPIOINT ->IO0IntClr |= 1 << 3;
-//	LPC_GPIOINT ->IO0IntEnR |= 1 << 3;
 
 	// rotary switch pio1_0 P0.24, pio1_1 P0.25
 	LPC_GPIOINT ->IO0IntClr |= 1 << 24;
@@ -370,6 +362,10 @@ void EINT1_IRQHandler(void) {
 
 	mode_flag = !mode_flag;
 
+	if(!mode_flag) {
+		prep_passiveMode();
+	}
+
 	NVIC_ClearPendingIRQ(EINT1_IRQn);
 	LPC_SC ->EXTINT = (1 << 1); /* Clear Interrupt Flag */
 }
@@ -418,7 +414,7 @@ void check_joystick(void) {
 		//ensure delay between screen changes
 		if(getTicks() > lastScreenChangeTicks + 1000) {
 			reinit_screen_flag = 1;
-			oled_page_state = (oled_page_state + 1) % 4;
+			oled_page_state = (oled_page_state + 1) % 6;
 
 			lastScreenChangeTicks = getTicks();
 		}
@@ -439,7 +435,7 @@ void check_joystick(void) {
 //		x--;
 		if(getTicks() > lastScreenChangeTicks + 1000) {
 			reinit_screen_flag = 1;
-			oled_page_state = (oled_page_state == 0 ? 3 : oled_page_state - 1);
+			oled_page_state = (oled_page_state == 0 ? 5 : oled_page_state - 1);
 
 			lastScreenChangeTicks = getTicks();
 		}
@@ -498,20 +494,24 @@ void monitor_oled_init(void) {
 }
 
 void monitor_oled_temp(void) {
-	oled_putString(28, 1, "TEMP", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_line(0, 10, 95, 11, OLED_COLOR_WHITE);
+	oled_putBigString(20, 1, "TEMP", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 }
 
 void monitor_oled_light(void) {
-	oled_putString(30, 1, "LUX", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_line(0, 10, 95, 11, OLED_COLOR_WHITE);
+	oled_putBigString(30, 1, "LUX", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 }
 
-void monitor_oled_acc(void) {
-	oled_putString(30, 1, "ACC", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_line(0, 10, 95, 11, OLED_COLOR_WHITE);
+void monitor_oled_accX(void) {
+	oled_putBigString(15, 1, "ACC X", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 }
 
+void monitor_oled_accY(void) {
+	oled_putBigString(15, 1, "ACC Y", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+}
+
+void monitor_oled_accZ(void) {
+	oled_putBigString(15, 1, "ACC Z", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+}
 //update sampled data on oled
 void displaySampledData_oled(void) {
 	//update OLED
@@ -530,23 +530,27 @@ void displaySampledData_oled(void) {
 //helper functions to display values for diff screens
 void displayTempLarge_oled(void) {
 	sprintf(tempStr, "%.2f   ", temperature_reading / 10.0);
-	oled_putBigString(15, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
-//	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-
+	oled_putBigString(15, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
 }
 
 void displayLightLarge_oled(void) {
 	sprintf(tempStr, "%u  ", light_reading);
-	oled_putBigString(25, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
-//	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-
+	oled_putBigString(25, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
 }
 
-void displayAccLarge_oled(void) {
+void displayAccXLarge_oled(void) {
 	sprintf(tempStr, "%d   ", accX - accInitX);
-	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
-//	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+}
 
+void displayAccYLarge_oled(void) {
+	sprintf(tempStr, "%d   ", accY - accInitY);
+	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+}
+
+void displayAccZLarge_oled(void) {
+	sprintf(tempStr, "%d   ", accZ - accInitZ);
+	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
 }
 
 
@@ -594,8 +598,6 @@ void prep_passiveMode(void) {
 
 void read_acc(int8_t* accX, int8_t* accY, int8_t* accZ) {
 	//poll acc sensor
-//	acc_setMode(ACC_MODE_MEASURE);
-//	acc_setRange(ACC_RANGE_2G);
 	acc_read(accX, accY, accZ);
 
 	//check for movement and update accOld
@@ -608,8 +610,6 @@ void read_acc(int8_t* accX, int8_t* accY, int8_t* accZ) {
 	accOldX = *accX;
 	accOldY = *accY;
 	accOldZ = *accZ;
-//	acc_setMode(ACC_MODE_LEVEL);
-//	acc_setRange(ACC_RANGE_8G);
 }
 
 //sample the accelerometer, light, temperature sensors
@@ -622,11 +622,6 @@ void sample_sensors(void) {
 	temperature_reading = temp_read();
 }
 
-/*** Data transmitting functions ***/
-
-int format_string(char * string, char * title, float value) {
-	return snprintf(string, "%s_%s%.2f", string, title, value);
-}
 //transmit message through UART
 void transmitData() {
 	if (((rgbLED_mask & RGB_RED) >> 0) == 1) {
@@ -640,13 +635,6 @@ void transmitData() {
 	static uint8_t transmitCount = 0;
 
 	char string[50];
-//	format_string(string, "%d_-", transmitCount++);
-//	format_string(string, "T", temperature_reading / 10.0);
-//	format_string(string, "L", light_reading);
-//	format_string(string, "AX", accX - accInitX);
-//	format_string(string, "AY", accY - accInitY);
-//	format_string(string, "AZ", accZ - accInitZ);
-//	format_string(string, "%s\r\n", string);
 
 	snprintf(string,50 , "%03d_-_T-%.2f_L-%d_AX.%d_AY.%d_AZ.%d\r\n",
 			transmitCount++, temperature_reading / 10.0, light_reading,
@@ -672,6 +660,8 @@ void initial_setup(int8_t* accInitX, int8_t* accInitY, int8_t* accInitZ) {
 	oled_clearScreen(OLED_COLOR_BLACK); //clear oled
 	read_acc(accInitX, accInitY, accInitZ);
 	acc_init();
+
+	prep_passiveMode();
 }
 
 int main(void) {
@@ -680,7 +670,7 @@ int main(void) {
 	while (1) {
 		//stable, passive mode
 		if (mode_flag == 0) {
-			prep_passiveMode();
+//			prep_passiveMode();
 			while (mode_flag == 0); //wait for MONITOR to be enabled
 			prep_monitorMode();
 		}
@@ -699,15 +689,6 @@ int main(void) {
 
 		if (led_array_flag) {
 			pca9532_setLeds(led_set, 0xFFFF);  //moves onLed down array
-//			led_set = led_mov_dir ? led_set >> 1 : led_set << 1;
-//
-//			//changes direction when at the ends
-//			if (led_set == 0x0001) {
-//				led_mov_dir = 0;
-//			} else if (led_set == 0x8000) {
-//				led_mov_dir = 1;
-//			}
-//			led_array_flag = 0;
 
 			led_set = led_mov_dir ? 0xAAAA : 0x5555;
 			led_mov_dir = !led_mov_dir;
@@ -715,7 +696,6 @@ int main(void) {
 			led_array_flag = 0;
 		}
 
-		//sample all sensors at 5s, else check temp and acc at 0.1s
 		//init the screens
 		if(reinit_screen_flag) {
 			oled_clearScreen(OLED_COLOR_BLACK);
@@ -731,7 +711,13 @@ int main(void) {
 					monitor_oled_light();
 					break;
 				case 3:
-					monitor_oled_acc();
+					monitor_oled_accX();
+					break;
+				case 4:
+					monitor_oled_accY();
+					break;
+				case 5:
+					monitor_oled_accZ();
 					break;
 			}
 
@@ -755,12 +741,17 @@ int main(void) {
 					displayLightLarge_oled();
 					break;
 				case 3:
-					displayAccLarge_oled();
+					displayAccXLarge_oled();
+					break;
+				case 4:
+					displayAccYLarge_oled();
+					break;
+				case 5:
+					displayAccZLarge_oled();
 					break;
 			}
 		} else if (getTicks() > oldSampleTicks + 100) {
 			temperature_reading = temp_read();
-
 			read_acc(&accX, &accY, &accZ);
 
 			oldSampleTicks = getTicks();
