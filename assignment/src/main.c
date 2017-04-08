@@ -591,7 +591,7 @@ void prep_passiveMode(void) {
 	//reset flags
 	temp_high_flag = 0;
 	detect_darkness_flag = 1;
-	movement_lowLight_flag = 0;
+	movement_detected_flag = 0;
 
 	//reset page
 	oled_page_state = 0;
@@ -674,11 +674,11 @@ int main(void) {
 	while (1) {
 		//stable, passive mode
 		if (mode_flag == 0) {
-//			prep_passiveMode();
 			while (mode_flag == 0); //wait for MONITOR to be enabled
 			prep_monitorMode();
 		}
 
+//		//slower, delay but much less likely to crash
 //		if(rgbLED_flag) {
 //			rgbLED_controller();
 //
