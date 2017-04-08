@@ -914,7 +914,7 @@ void oled_putBigString(uint8_t x, uint8_t y, uint8_t *pStr, oled_color_t fb,
       {
         break;
     }
-    x += 6;
+    x += 7*size;
   }
   return;
 }

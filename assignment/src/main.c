@@ -385,7 +385,7 @@ void check_rotary_switch(void) {
 		// clockwise
 		if (rotary_flag_0 && rotary_flag_1) {
 
-			printf("cw %u\n", font_size++);
+			printf("cw %u\n", (font_size >= 3 ? font_size : font_size++));
 
 			rotary_flag_0 = 0;
 			rotary_flag_1 = 0;
@@ -397,7 +397,7 @@ void check_rotary_switch(void) {
 		// anti-clockwise
 		if (rotary_flag_0 && rotary_flag_1) {
 
-			printf("acw %u\n", font_size--);
+			printf("acw %u\n", (font_size <= 0 ? font_size : font_size--));
 
 			rotary_flag_0 = 0;
 			rotary_flag_1 = 0;
@@ -530,22 +530,22 @@ void displaySampledData_oled(void) {
 //helper functions to display values for diff screens
 void displayTempLarge_oled(void) {
 	sprintf(tempStr, "%.2f   ", temperature_reading / 10.0);
-//	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
-	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putBigString(15, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+//	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
 }
 
 void displayLightLarge_oled(void) {
 	sprintf(tempStr, "%u  ", light_reading);
-//	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
-	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putBigString(25, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+//	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
 }
 
 void displayAccLarge_oled(void) {
 	sprintf(tempStr, "%d   ", accX - accInitX);
-//	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
-	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putBigString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+//	oled_putString(35, 22, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
 }
 
@@ -625,7 +625,7 @@ void sample_sensors(void) {
 /*** Data transmitting functions ***/
 
 int format_string(char * string, char * title, float value) {
-	return sprintf(string, "%s_%s%.2f", string, title, value);
+	return snprintf(string, "%s_%s%.2f", string, title, value);
 }
 //transmit message through UART
 void transmitData() {
@@ -640,15 +640,19 @@ void transmitData() {
 	static uint8_t transmitCount = 0;
 
 	char string[50];
-	sprintf(string, "%d_-", transmitCount++);
+//	format_string(string, "%d_-", transmitCount++);
+//	format_string(string, "T", temperature_reading / 10.0);
+//	format_string(string, "L", light_reading);
+//	format_string(string, "AX", accX - accInitX);
+//	format_string(string, "AY", accY - accInitY);
+//	format_string(string, "AZ", accZ - accInitZ);
+//	format_string(string, "%s\r\n", string);
 
-	format_string(string, "T", temperature_reading / 10.0);
-	format_string(string, "L", light_reading);
-	format_string(string, "AX", accX - accInitX);
-	format_string(string, "AY", accY - accInitY);
-	format_string(string, "AZ", accZ - accInitZ);
+	snprintf(string,50 , "%03d_-_T-%.2f_L-%d_AX.%d_AY.%d_AZ.%d\r\n",
+			transmitCount++, temperature_reading / 10.0, light_reading,
+			accX - accInitX, accY - accInitY, accZ - accInitZ);
 
-	sprintf(string, "%s\r\n", string);
+	printf(string);
 
 	UART_SendString(LPC_UART3, &string);
 }
