@@ -24,6 +24,9 @@
 #define DEBUG_HEAT_OFFSET 0
 #endif
 
+#define SCREEN_CHG_DELAY 500
+
+
 /*** LED params ***/
 static uint8_t rgbLED_mask = 0x00;
 static uint8_t rgbLED_set = 0x03;
@@ -221,7 +224,7 @@ void TIMER1_IRQHandler(void) {
 	LPC_TIM1 ->IR = isrMask; /* Clear the Interrupt Bit by writing to the register */// bitwise not
 
 	rgbLED_flag = 1;
-//	rgbLED_controller();
+	rgbLED_controller();
 
 	led_array_flag = 1;
 }
@@ -242,7 +245,7 @@ void TIMER2_IRQHandler(void) {
 	}
 
 	sseg_flag = 1;
-//	sseg_controller(); // ! may be slow
+	sseg_controller(); // ! may be slow
 }
 
 /*** SysTick helper functions ***/
@@ -412,7 +415,7 @@ void check_joystick(void) {
 //		x++;
 
 		//ensure delay between screen changes
-		if(getTicks() > lastScreenChangeTicks + 1000) {
+		if(getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY) {
 			reinit_screen_flag = 1;
 			oled_page_state = (oled_page_state + 1) % 6;
 
@@ -433,7 +436,7 @@ void check_joystick(void) {
 	}
 	if ((LPC_GPIOINT ->IO2IntStatF >> 4) & 0x1) {
 //		x--;
-		if(getTicks() > lastScreenChangeTicks + 1000) {
+		if(getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY) {
 			reinit_screen_flag = 1;
 			oled_page_state = (oled_page_state == 0 ? 5 : oled_page_state - 1);
 
@@ -494,23 +497,23 @@ void monitor_oled_init(void) {
 }
 
 void monitor_oled_temp(void) {
-	oled_putBigString(20, 1, "TEMP", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(20, 1, "TEMP ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 }
 
 void monitor_oled_light(void) {
-	oled_putBigString(30, 1, "LUX", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(30, 1, "LUX  ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 }
 
 void monitor_oled_accX(void) {
-	oled_putBigString(15, 1, "ACC X", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(15, 1, "ACC X ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 }
 
 void monitor_oled_accY(void) {
-	oled_putBigString(15, 1, "ACC Y", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(15, 1, "ACC Y ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 }
 
 void monitor_oled_accZ(void) {
-	oled_putBigString(15, 1, "ACC Z", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(15, 1, "ACC Z ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 }
 //update sampled data on oled
 void displaySampledData_oled(void) {
@@ -576,6 +579,7 @@ void prep_passiveMode(void) {
 	led7seg_setChar(0x00, 0);			//off 7 segment
 	timer2count = 0;						//reset 7 segment counter
 	rgb_setLeds(0x00);	//off RGB led
+	pca9532_setLeds(0x00, 0xFFFF);
 
 	//reset clocks
 	LPC_TIM1 ->TCR = (1 << 1);
@@ -675,19 +679,19 @@ int main(void) {
 			prep_monitorMode();
 		}
 
-		if(rgbLED_flag) {
-			rgbLED_controller();
+//		if(rgbLED_flag) {
+//			rgbLED_controller();
+//
+//			rgbLED_flag = 0;
+//		}
+//
+//		if(sseg_flag) {
+//			sseg_controller();
+//
+//			sseg_flag = 0;
+//		}
 
-			rgbLED_flag = 0;
-		}
-
-		if(sseg_flag) {
-			sseg_controller();
-
-			sseg_flag = 0;
-		}
-
-		if (led_array_flag) {
+		if (led_array_flag && ((rgbLED_mask & RGB_BLUE) >> 1) == 1) {
 			pca9532_setLeds(led_set, 0xFFFF);  //moves onLed down array
 
 			led_set = led_mov_dir ? 0xAAAA : 0x5555;
@@ -763,18 +767,25 @@ int main(void) {
 			rgbLED_mask |= RGB_RED;
 		}
 
-		//if MOVEMENT_DETECTED
-		if (movement_detected_flag) {
-			//if no movement in darkness after set duration, disable movement flag
-			if (getTicks() > lastMotionDetectedTicks + 20) {
-				//check for prolonged movement detection, if so, set flag
-				if (!detect_darkness_flag) {
-					rgbLED_mask |= RGB_BLUE; //toggle blue led mask on
-				} else {
-					movement_detected_flag = 0;
-				}
+		//if low light detected
+		if(!detect_darkness_flag) {
+			if(movement_detected_flag) {
+				rgbLED_mask |= RGB_BLUE; //toggle blue led mask on
 			}
 		}
+
+//		//if MOVEMENT_DETECTED
+//		if (movement_detected_flag) {
+//			//if no movement in darkness after set duration, disable movement flag
+//			if (getTicks() > lastMotionDetectedTicks + 20) {
+//				//check for prolonged movement detection, if so, set flag
+//				if (!detect_darkness_flag) {
+//					rgbLED_mask |= RGB_BLUE; //toggle blue led mask on
+//				} else {
+//					movement_detected_flag = 0;
+//				}
+//			}
+//		}
 
 		//if need to transmit
 		if (send_message_flag) {
