@@ -68,6 +68,7 @@ volatile uint8_t mode_flag = 0; //1 - monitor, 0 - passive
 volatile uint8_t sample_sensors_flag = 0;
 
 /*** OLED params ***/
+volatile uint32_t lastScreenChangeTicks = 0;
 volatile uint8_t oled_page_state = 0; //0 - default, 1 - temp, 2 - lux, 3 - acc
 volatile uint8_t reinit_screen_flag = 0;
 uint8_t tempStr[80];
@@ -154,7 +155,7 @@ static void init_SSP(void) {
 }
 
 //uart1 pincfg
-void pinsel_uart1(void) {
+static void pinsel_uart1(void) {
 	PINSEL_CFG_Type PinCfg;
 	PinCfg.Funcnum = 1;
 	PinCfg.Pinnum = 0;
@@ -165,7 +166,7 @@ void pinsel_uart1(void) {
 }
 
 //uart3 pincfg
-void pinsel_uart3(void) {
+static void pinsel_uart3(void) {
 	PINSEL_CFG_Type PinCfg;
 	PinCfg.Funcnum = 2;
 	PinCfg.Pinnum = 0;
@@ -176,7 +177,7 @@ void pinsel_uart3(void) {
 }
 
 //uart enabler
-void init_uart(void) {
+static void init_uart(void) {
 	UART_CFG_Type uartCfg;
 	uartCfg.Baud_rate = 115200;
 	uartCfg.Databits = UART_DATABIT_8;
@@ -425,8 +426,14 @@ void check_joystick(void) {
 	}
 	if ((LPC_GPIOINT ->IO0IntStatF >> 16) & 0x1) {
 //		x++;
-		reinit_screen_flag = 1;
-		oled_page_state = (oled_page_state + 1) % 4;
+
+		//ensure delay between screen changes
+		if(getTicks() > lastScreenChangeTicks + 1000) {
+			reinit_screen_flag = 1;
+			oled_page_state = (oled_page_state + 1) % 4;
+
+			lastScreenChangeTicks = getTicks();
+		}
 
 		LPC_GPIOINT ->IO0IntClr = 1 << 16;
 	}
@@ -442,9 +449,12 @@ void check_joystick(void) {
 	}
 	if ((LPC_GPIOINT ->IO2IntStatF >> 4) & 0x1) {
 //		x--;
-		reinit_screen_flag = 1;
+		if(getTicks() > lastScreenChangeTicks + 1000) {
+			reinit_screen_flag = 1;
+			oled_page_state = (oled_page_state == 0 ? 3 : oled_page_state - 1);
 
-		oled_page_state = (oled_page_state == 0 ? 3 : oled_page_state - 1);
+			lastScreenChangeTicks = getTicks();
+		}
 
 		LPC_GPIOINT ->IO2IntClr = 1 << 4;
 	}
@@ -672,16 +682,21 @@ int main(void) {
 			prep_monitorMode();
 		}
 
-		if (led_array_flag && mode_flag) {
+		if (led_array_flag) {
 			pca9532_setLeds(led_set, 0xFFFF);  //moves onLed down array
-			led_set = led_mov_dir ? led_set >> 1 : led_set << 1;
+//			led_set = led_mov_dir ? led_set >> 1 : led_set << 1;
+//
+//			//changes direction when at the ends
+//			if (led_set == 0x0001) {
+//				led_mov_dir = 0;
+//			} else if (led_set == 0x8000) {
+//				led_mov_dir = 1;
+//			}
+//			led_array_flag = 0;
 
-			//changes direction when at the ends
-			if (led_set == 0x0001) {
-				led_mov_dir = 0;
-			} else if (led_set == 0x8000) {
-				led_mov_dir = 1;
-			}
+			led_set = led_mov_dir ? 0xAAAA : 0x5555;
+			led_mov_dir = !led_mov_dir;
+
 			led_array_flag = 0;
 		}
 
@@ -753,7 +768,6 @@ int main(void) {
 			send_message_flag = 0;
 		}
 	}
-
 	return 0;
 }
 
