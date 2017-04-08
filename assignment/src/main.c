@@ -16,7 +16,6 @@
 #include "light.h"
 #include "temp.h"
 
-#define DEBUG
 
 #ifdef DEBUG
 #define DEBUG_HEAT_OFFSET 200
@@ -30,13 +29,14 @@ static uint8_t rgbLED_mask = 0x00;
 static uint8_t rgbLED_set = 0x03;
 
 static uint32_t led_set = 0x0001; //for array
+static volatile uint8_t rgbLED_flag = 0;
 
-static volatile uint8_t red_led_flag = 0;
 static volatile uint8_t led_array_flag = 0;
 static uint8_t led_mov_dir = 0; // 0 for <<, 1 for >>
 
 /*** timer params ***/
 volatile uint32_t msTicks = 0; // counter for 1ms SysTicks
+uint32_t oldSampleTicks = 0;
 
 /*** 7-segment display params ***/
 volatile uint8_t sseg_flag = 0;
@@ -154,17 +154,6 @@ static void init_SSP(void) {
 	SSP_Cmd(LPC_SSP1, ENABLE);
 }
 
-//uart1 pincfg
-static void pinsel_uart1(void) {
-	PINSEL_CFG_Type PinCfg;
-	PinCfg.Funcnum = 1;
-	PinCfg.Pinnum = 0;
-	PinCfg.Portnum = 15;
-	PINSEL_ConfigPin(&PinCfg);
-	PinCfg.Pinnum = 16;
-	PINSEL_ConfigPin(&PinCfg);
-}
-
 //uart3 pincfg
 static void pinsel_uart3(void) {
 	PINSEL_CFG_Type PinCfg;
@@ -231,8 +220,9 @@ void TIMER1_IRQHandler(void) {
 	isrMask = LPC_TIM1 ->IR;
 	LPC_TIM1 ->IR = isrMask; /* Clear the Interrupt Bit by writing to the register */// bitwise not
 
-	rgbLED_controller();
+//	rgbLED_controller();
 
+	rgbLED_flag = 1;
 	led_array_flag = 1;
 }
 
@@ -243,8 +233,6 @@ void TIMER2_IRQHandler(void) {
 	isrMask = LPC_TIM2 ->IR;
 	LPC_TIM2 ->IR = isrMask; /* Clear the Interrupt Bit by writing to the register */// bitwise not
 
-	sseg_flag = 1;
-
 	if (timer2count == 5 || timer2count == 10 || timer2count == 15) {
 		sample_sensors_flag = 1;
 	}
@@ -253,8 +241,8 @@ void TIMER2_IRQHandler(void) {
 		send_message_flag = 1;
 	}
 
-	sseg_controller(); // ! may be slow
-
+	sseg_flag = 1;
+//	sseg_controller(); // ! may be slow
 }
 
 /*** SysTick helper functions ***/
@@ -320,8 +308,8 @@ void init_interrupts() {
 	lightSensor_detectDarkness();
 
 	// accelerometer pio1_8 P0.3
-	LPC_GPIOINT ->IO0IntClr |= 1 << 3;
-	LPC_GPIOINT ->IO0IntEnR |= 1 << 3;
+//	LPC_GPIOINT ->IO0IntClr |= 1 << 3;
+//	LPC_GPIOINT ->IO0IntEnR |= 1 << 3;
 
 	// rotary switch pio1_0 P0.24, pio1_1 P0.25
 	LPC_GPIOINT ->IO0IntClr |= 1 << 24;
@@ -606,11 +594,22 @@ void prep_passiveMode(void) {
 
 void read_acc(int8_t* accX, int8_t* accY, int8_t* accZ) {
 	//poll acc sensor
-	acc_setMode(ACC_MODE_MEASURE);
-	acc_setRange(ACC_RANGE_2G);
+//	acc_setMode(ACC_MODE_MEASURE);
+//	acc_setRange(ACC_RANGE_2G);
 	acc_read(accX, accY, accZ);
-	acc_setMode(ACC_MODE_LEVEL);
-	acc_setRange(ACC_RANGE_8G);
+
+	//check for movement and update accOld
+	if((*accX - accOldX > 5) || (*accY - accOldY > 5) || (*accZ - accOldZ > 5)) {
+		movement_detected_flag = 1;
+
+		printf("movement detected\n");
+	}
+
+	accOldX = *accX;
+	accOldY = *accY;
+	accOldZ = *accZ;
+//	acc_setMode(ACC_MODE_LEVEL);
+//	acc_setRange(ACC_RANGE_8G);
 }
 
 //sample the accelerometer, light, temperature sensors
@@ -668,7 +667,7 @@ void initial_setup(int8_t* accInitX, int8_t* accInitY, int8_t* accInitZ) {
 	light_enable(); //enable light sensor
 	oled_clearScreen(OLED_COLOR_BLACK); //clear oled
 	read_acc(accInitX, accInitY, accInitZ);
-	acc_config_mode_LEVEL(); //ready for interrupt
+	acc_init();
 }
 
 int main(void) {
@@ -680,6 +679,18 @@ int main(void) {
 			prep_passiveMode();
 			while (mode_flag == 0); //wait for MONITOR to be enabled
 			prep_monitorMode();
+		}
+
+		if(rgbLED_flag) {
+			rgbLED_controller();
+
+			rgbLED_flag = 0;
+		}
+
+		if(sseg_flag) {
+			sseg_controller();
+
+			sseg_flag = 0;
 		}
 
 		if (led_array_flag) {
@@ -723,6 +734,7 @@ int main(void) {
 			reinit_screen_flag = 0;
 		}
 
+		//sample sensors every 5s, else sample temp and acc every 0.1s
 		if (sample_sensors_flag) {
 			sample_sensors();
 			sample_sensors_flag = 0;
@@ -742,6 +754,12 @@ int main(void) {
 					displayAccLarge_oled();
 					break;
 			}
+		} else if (getTicks() > oldSampleTicks + 100) {
+			temperature_reading = temp_read();
+
+			read_acc(&accX, &accY, &accZ);
+
+			oldSampleTicks = getTicks();
 		}
 
 
