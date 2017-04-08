@@ -253,7 +253,7 @@ void TIMER2_IRQHandler(void) {
 		send_message_flag = 1;
 	}
 
-//	sseg_controller(); // ! may be slow
+	sseg_controller(); // ! may be slow
 
 }
 
