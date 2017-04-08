@@ -32,7 +32,7 @@
  * Pin 0.2 or pin 1.5 can be used as input source for the temp sensor
  * Selected by jumper J25.
  */
-//#define TEMP_USE_P0_2
+//#define TEMP_USE_P0_6
 
 #if TEMP_TS1 == 0 && TEMP_TS0 == 0
 #define TEMP_SCALAR_DIV10 1

@@ -103,7 +103,7 @@ static void init_GPIO(void) {
 static void init_I2C2(void) {
 	PINSEL_CFG_Type PinCfg;
 
-	/* Initialize I2C2 pin connect */
+	/* Initialize I2C2 pin connect P0.10 */
 	PinCfg.Funcnum = 2;
 	PinCfg.Pinnum = 10;
 	PinCfg.Portnum = 0;
@@ -140,9 +140,9 @@ static void init_SSP(void) {
 	PINSEL_ConfigPin(&PinCfg);
 	PinCfg.Pinnum = 9;
 	PINSEL_ConfigPin(&PinCfg);
-	PinCfg.Funcnum = 0;
-	PinCfg.Portnum = 2;
-	PinCfg.Pinnum = 2;
+//	PinCfg.Funcnum = 0;
+	PinCfg.Portnum = 0;
+	PinCfg.Pinnum = 6;
 	PINSEL_ConfigPin(&PinCfg);
 
 	SSP_ConfigStructInit(&SSP_ConfigStruct);
@@ -253,7 +253,7 @@ void TIMER2_IRQHandler(void) {
 		send_message_flag = 1;
 	}
 
-	sseg_controller(); // ! may be slow
+//	sseg_controller(); // ! may be slow
 
 }
 
@@ -700,6 +700,7 @@ int main(void) {
 			led_array_flag = 0;
 		}
 
+		//sample all sensors at 5s, else check temp and acc at 0.1s
 		//init the screens
 		if(reinit_screen_flag) {
 			oled_clearScreen(OLED_COLOR_BLACK);
@@ -722,7 +723,6 @@ int main(void) {
 			reinit_screen_flag = 0;
 		}
 
-		//main tasks
 		if (sample_sensors_flag) {
 			sample_sensors();
 			sample_sensors_flag = 0;
@@ -743,6 +743,7 @@ int main(void) {
 					break;
 			}
 		}
+
 
 		//if high temperature is detected
 		if (temperature_reading >= (TEMP_HIGH_WARNING - DEBUG_HEAT_OFFSET)) {
