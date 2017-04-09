@@ -72,9 +72,12 @@ volatile uint8_t sample_sensors_flag = 0;
 
 /*** OLED params ***/
 volatile uint32_t lastScreenChangeTicks = 0;
-volatile uint8_t oled_page_state = 0; //0 - default, 1 - temp, 2 - lux, 3 - acc
+volatile uint8_t oled_page_state = 0; //0 - default, 1 - temp, 2 - lux, 3 - accX, 4- accY, 5- accZ, 6 - funcMode
 volatile uint8_t reinit_screen_flag = 0;
 uint8_t tempStr[80];
+
+volatile uint8_t func_mode_selection = 0; //0 - Siren, 1 - SOS to CEMS, 2 - Lights, 3 - $$$$$
+volatile uint8_t func_change_flag = 1;//init to 1 to set 1st arrow
 
 /*** UART params ***/
 volatile uint8_t send_message_flag = 0;
@@ -353,7 +356,7 @@ void rgbLED_controller(void) {
 void EINT0_IRQHandler(void) {
 	printf("Button SW3 Liao\n");
 
-	mode_flag = !mode_flag;
+	printf("Function executed.\n");
 
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
 	LPC_SC ->EXTINT = (1 << 0); /* Clear Interrupt Flag */
@@ -409,6 +412,12 @@ void check_joystick(void) {
 	// Determine whether GPIO Interrupt P2.10 has occurred
 	if ((LPC_GPIOINT ->IO0IntStatF >> 15) & 0x1) {
 //		y++;
+		if(oled_page_state == 6) {
+			func_mode_selection = (func_mode_selection == 3 ? 0 : func_mode_selection + 1);
+
+			func_change_flag = 1;
+		}
+
 		LPC_GPIOINT ->IO0IntClr = 1 << 15;
 	}
 	if ((LPC_GPIOINT ->IO0IntStatF >> 16) & 0x1) {
@@ -417,7 +426,7 @@ void check_joystick(void) {
 		//ensure delay between screen changes
 		if(getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY) {
 			reinit_screen_flag = 1;
-			oled_page_state = (oled_page_state + 1) % 6;
+			oled_page_state = (oled_page_state + 1) % 7;
 
 			lastScreenChangeTicks = getTicks();
 		}
@@ -431,6 +440,12 @@ void check_joystick(void) {
 		LPC_GPIOINT ->IO0IntClr = 1 << 17;
 	}
 	if ((LPC_GPIOINT ->IO2IntStatF >> 3) & 0x1) {
+
+		if(oled_page_state == 6) {
+			func_mode_selection = (func_mode_selection == 0 ? 3 : func_mode_selection - 1);
+
+			func_change_flag = 1;
+		}
 //		y--;
 		LPC_GPIOINT ->IO2IntClr = 1 << 3;
 	}
@@ -438,7 +453,7 @@ void check_joystick(void) {
 //		x--;
 		if(getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY) {
 			reinit_screen_flag = 1;
-			oled_page_state = (oled_page_state == 0 ? 5 : oled_page_state - 1);
+			oled_page_state = (oled_page_state == 0 ? 6 : oled_page_state - 1);
 
 			lastScreenChangeTicks = getTicks();
 		}
@@ -515,6 +530,24 @@ void monitor_oled_accY(void) {
 void monitor_oled_accZ(void) {
 	oled_putBigString(15, 1, "ACC Z ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 }
+
+void monitor_oled_func(void) {
+	oled_putString(1, 1, "Select Function:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
+	//selection boxes
+	oled_rect(0, 10, 95, 23, OLED_COLOR_WHITE);
+	oled_rect(0, 23, 95, 36, OLED_COLOR_WHITE);
+	oled_rect(0, 36, 95, 49, OLED_COLOR_WHITE);
+	oled_rect(0, 49, 95, 62, OLED_COLOR_WHITE);
+
+	//selection text
+	oled_putString(9, 13, "Siren       ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(9, 27, "SOS to CEMS ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(9, 39, "Lights      ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(9, 52, "$$$$$       ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
+}
+
 //update sampled data on oled
 void displaySampledData_oled(void) {
 	//update OLED
@@ -556,7 +589,20 @@ void displayAccZLarge_oled(void) {
 	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
 }
 
+void update_selectArrow_oled (void) {
+	//clear the previous arrow
+	oled_putString(2, 13 , " ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 26 , " ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 39 , " ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 52 , " ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
+	oled_putString(2, 13 * (1+func_mode_selection), ">", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
+	switch(func_mode_selection) {
+
+
+	}
+}
 
 void prep_monitorMode(void) {
 	//un-reset clocks
@@ -723,6 +769,9 @@ int main(void) {
 				case 5:
 					monitor_oled_accZ();
 					break;
+				case 6:
+					monitor_oled_func();
+					break;
 			}
 
 			reinit_screen_flag = 0;
@@ -771,6 +820,27 @@ int main(void) {
 		if(!detect_darkness_flag) {
 			if(movement_detected_flag) {
 				rgbLED_mask |= RGB_BLUE; //toggle blue led mask on
+			}
+		}
+
+
+		//if at func mode screen
+		if(oled_page_state == 6) {
+			if(func_change_flag) {
+				update_selectArrow_oled();
+
+				switch(func_mode_selection) {
+				case 0:
+					break;
+				case 1:
+					break;
+				case 2:
+					break;
+				case 3:
+					break;
+				}
+
+				func_change_flag = 0;
 			}
 		}
 
