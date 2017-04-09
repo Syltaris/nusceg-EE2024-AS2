@@ -26,6 +26,8 @@
 
 #define SCREEN_CHG_DELAY 500
 
+/*** device/user id ***/
+const char* userID = "EE2024";
 
 /*** LED params ***/
 static uint8_t rgbLED_mask = 0x00;
@@ -76,8 +78,10 @@ volatile uint8_t oled_page_state = 0; //0 - default, 1 - temp, 2 - lux, 3 - accX
 volatile uint8_t reinit_screen_flag = 0;
 uint8_t tempStr[80];
 
+/*** Function mode params ***/
 volatile uint8_t func_mode_selection = 0; //0 - Siren, 1 - SOS to CEMS, 2 - Lights, 3 - $$$$$
 volatile uint8_t func_change_flag = 0;//init to 1 to set 1st arrow
+volatile uint8_t func_execute_flag = 0;
 
 /*** UART params ***/
 volatile uint8_t send_message_flag = 0;
@@ -353,10 +357,21 @@ void rgbLED_controller(void) {
 	rgb_setLeds(rgbLED_mask & rgbLED_set);
 }
 
+//sets the led arrays' leds
+void ledArray_controller(void) {
+	pca9532_setLeds(led_set, 0xFFFF); //moves onLed down array
+	led_set = led_mov_dir ? 0xAAAA : 0x5555;
+	led_mov_dir = !led_mov_dir;
+	led_array_flag = 0;
+}
+
 void EINT0_IRQHandler(void) {
 	printf("Button SW3 Liao\n");
 
-	printf("Function executed.\n");
+	if(oled_page_state == 6) {
+		func_execute_flag = 1;
+		printf("Function executed.\n");
+	}
 
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
 	LPC_SC ->EXTINT = (1 << 0); /* Clear Interrupt Flag */
@@ -632,6 +647,57 @@ void update_selectArrow_oled (void) {
 	graphics_glitch_fix();
 }
 
+void reinit_oled(void) {
+	oled_clearScreen(OLED_COLOR_BLACK);
+	switch (oled_page_state) {
+	case 0:
+		monitor_oled_init();
+		break;
+	case 1:
+		monitor_oled_temp();
+		break;
+	case 2:
+		monitor_oled_light();
+		break;
+	case 3:
+		monitor_oled_accX();
+		break;
+	case 4:
+		monitor_oled_accY();
+		break;
+	case 5:
+		monitor_oled_accZ();
+		break;
+	case 6:
+		monitor_oled_func();
+		break;
+	}
+}
+
+void update_oled() {
+	//display data to relevant screen
+	switch (oled_page_state) {
+	case 0:
+		displaySampledData_oled();
+		break;
+	case 1:
+		displayTempLarge_oled();
+		break;
+	case 2:
+		displayLightLarge_oled();
+		break;
+	case 3:
+		displayAccXLarge_oled();
+		break;
+	case 4:
+		displayAccYLarge_oled();
+		break;
+	case 5:
+		displayAccZLarge_oled();
+		break;
+	}
+}
+
 void prep_monitorMode(void) {
 	//un-reset clocks
 	LPC_TIM1 ->TCR = (0 << 1);
@@ -701,6 +767,21 @@ void sample_sensors(void) {
 	temperature_reading = temp_read();
 }
 
+/*** function mode executor ***/
+void execute_function(void) {
+	switch (func_mode_selection) {
+	case 0:
+		break;
+	case 1:
+		notify_cems();
+		break;
+	case 2:
+		break;
+	case 3:
+		break;
+	}
+}
+
 //transmit message through UART
 void transmitData() {
 	if (((rgbLED_mask & RGB_RED) >> 0) == 1) {
@@ -724,6 +805,16 @@ void transmitData() {
 	UART_SendString(LPC_UART3, &string);
 }
 
+//send SOS message to CEMS
+void notify_cems() {
+	char string[50];
+
+	sprintf(string, 50, "User %s has requested for assistance.\n", userID);
+	printf("NOTIFIED\n");
+
+	UART_SendString(LPC_UART3, &string);
+}
+
 void initial_setup(int8_t* accInitX, int8_t* accInitY, int8_t* accInitZ) {
 	//SysTick init
 	SysTick_Config(SystemCoreClock / 1000);
@@ -743,6 +834,7 @@ void initial_setup(int8_t* accInitX, int8_t* accInitY, int8_t* accInitZ) {
 	prep_passiveMode();
 }
 
+
 int main(void) {
 	initial_setup(&accInitX, &accInitY, &accInitZ);
 	//main execution loop
@@ -756,53 +848,21 @@ int main(void) {
 		//slower, delay but much less likely to crash
 		if(rgbLED_flag) {
 			rgbLED_controller();
-
 			rgbLED_flag = 0;
 		}
 
 		if(sseg_flag) {
 			sseg_controller();
-
 			sseg_flag = 0;
 		}
 
 		if (led_array_flag && ((rgbLED_mask & RGB_BLUE) >> 1) == 1) {
-			pca9532_setLeds(led_set, 0xFFFF);  //moves onLed down array
-
-			led_set = led_mov_dir ? 0xAAAA : 0x5555;
-			led_mov_dir = !led_mov_dir;
-
-			led_array_flag = 0;
+			ledArray_controller();
 		}
 
 		//init the screens
 		if(reinit_screen_flag) {
-			oled_clearScreen(OLED_COLOR_BLACK);
-
-			switch(oled_page_state) {
-				case 0:
-					monitor_oled_init();
-					break;
-				case 1:
-					monitor_oled_temp();
-					break;
-				case 2:
-					monitor_oled_light();
-					break;
-				case 3:
-					monitor_oled_accX();
-					break;
-				case 4:
-					monitor_oled_accY();
-					break;
-				case 5:
-					monitor_oled_accZ();
-					break;
-				case 6:
-					monitor_oled_func();
-					break;
-			}
-
+			reinit_oled();
 			reinit_screen_flag = 0;
 		}
 
@@ -812,33 +872,13 @@ int main(void) {
 			sample_sensors_flag = 0;
 
 			//display data to relevant screen
-			switch(oled_page_state) {
-				case 0:
-					displaySampledData_oled();
-					break;
-				case 1:
-					displayTempLarge_oled();
-					break;
-				case 2:
-					displayLightLarge_oled();
-					break;
-				case 3:
-					displayAccXLarge_oled();
-					break;
-				case 4:
-					displayAccYLarge_oled();
-					break;
-				case 5:
-					displayAccZLarge_oled();
-					break;
-			}
+			update_oled(oled_page_state);
 		} else if (getTicks() > oldSampleTicks + 100) {
 			temperature_reading = temp_read();
 			read_acc(&accX, &accY, &accZ);
 
 			oldSampleTicks = getTicks();
 		}
-
 
 		//if high temperature is detected
 		if (temperature_reading >= (TEMP_HIGH_WARNING - DEBUG_HEAT_OFFSET)) {
@@ -858,6 +898,12 @@ int main(void) {
 				update_selectArrow_oled();
 				func_change_flag = 0;
 			}
+		}
+
+		//execute function if selected
+		if(func_execute_flag) {
+			execute_function();
+			func_execute_flag = 0;
 		}
 
 //		//if MOVEMENT_DETECTED
