@@ -77,7 +77,7 @@ volatile uint8_t reinit_screen_flag = 0;
 uint8_t tempStr[80];
 
 volatile uint8_t func_mode_selection = 0; //0 - Siren, 1 - SOS to CEMS, 2 - Lights, 3 - $$$$$
-volatile uint8_t func_change_flag = 1;//init to 1 to set 1st arrow
+volatile uint8_t func_change_flag = 0;//init to 1 to set 1st arrow
 
 /*** UART params ***/
 volatile uint8_t send_message_flag = 0;
@@ -500,6 +500,10 @@ void EINT3_IRQHandler(void) {
 
 /*** OLED functions for monitor mode ***/
 
+void graphics_glitch_fix() {
+	oled_putPixel(95, 47, OLED_COLOR_BLACK);
+}
+
 //prints empty labels and 'monitor' on oled
 void monitor_oled_init(void) {
 	oled_putString(1, 1, "MODE: MONITOR", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
@@ -509,26 +513,33 @@ void monitor_oled_init(void) {
 	oled_putString(2, 32, "ACCX: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_putString(2, 42, "ACCY: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_putString(2, 52, "ACCZ: ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
+	graphics_glitch_fix();
 }
 
 void monitor_oled_temp(void) {
 	oled_putBigString(20, 1, "TEMP ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	graphics_glitch_fix();
 }
 
 void monitor_oled_light(void) {
 	oled_putBigString(30, 1, "LUX  ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	graphics_glitch_fix();
 }
 
 void monitor_oled_accX(void) {
 	oled_putBigString(15, 1, "ACC X ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	graphics_glitch_fix();
 }
 
 void monitor_oled_accY(void) {
 	oled_putBigString(15, 1, "ACC Y ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	graphics_glitch_fix();
 }
 
 void monitor_oled_accZ(void) {
 	oled_putBigString(15, 1, "ACC Z ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	graphics_glitch_fix();
 }
 
 void monitor_oled_func(void) {
@@ -546,6 +557,9 @@ void monitor_oled_func(void) {
 	oled_putString(9, 39, "Lights      ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_putString(9, 52, "$$$$$       ", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
+	update_selectArrow_oled();
+
+	graphics_glitch_fix();
 }
 
 //update sampled data on oled
@@ -561,32 +575,44 @@ void displaySampledData_oled(void) {
 	oled_putString(35, 42, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	sprintf(tempStr, "%d  ", accZ - accInitZ);
 	oled_putString(35, 52, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
+	graphics_glitch_fix();
 }
 
 //helper functions to display values for diff screens
 void displayTempLarge_oled(void) {
 	sprintf(tempStr, "%.2f   ", temperature_reading / 10.0);
 	oled_putBigString(15, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+
+	graphics_glitch_fix();
 }
 
 void displayLightLarge_oled(void) {
 	sprintf(tempStr, "%u  ", light_reading);
 	oled_putBigString(25, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+
+	graphics_glitch_fix();
 }
 
 void displayAccXLarge_oled(void) {
 	sprintf(tempStr, "%d   ", accX - accInitX);
 	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+
+	graphics_glitch_fix();
 }
 
 void displayAccYLarge_oled(void) {
 	sprintf(tempStr, "%d   ", accY - accInitY);
 	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+
+	graphics_glitch_fix();
 }
 
 void displayAccZLarge_oled(void) {
 	sprintf(tempStr, "%d   ", accZ - accInitZ);
 	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+
+	graphics_glitch_fix();
 }
 
 void update_selectArrow_oled (void) {
@@ -602,6 +628,8 @@ void update_selectArrow_oled (void) {
 
 
 	}
+
+	graphics_glitch_fix();
 }
 
 void prep_monitorMode(void) {
@@ -641,6 +669,7 @@ void prep_passiveMode(void) {
 
 	//reset page
 	oled_page_state = 0;
+	func_change_flag = 1;
 
 	//reset RGB flag
 	rgbLED_mask = 0x00;
@@ -823,23 +852,10 @@ int main(void) {
 			}
 		}
 
-
 		//if at func mode screen
 		if(oled_page_state == 6) {
 			if(func_change_flag) {
 				update_selectArrow_oled();
-
-				switch(func_mode_selection) {
-				case 0:
-					break;
-				case 1:
-					break;
-				case 2:
-					break;
-				case 3:
-					break;
-				}
-
 				func_change_flag = 0;
 			}
 		}
