@@ -97,6 +97,12 @@ volatile uint8_t rotary_flag_1 = 0;
 static void init_GPIO(void) {
 	PINSEL_CFG_Type PinCfg;
 
+	/* Init Ext LED to GPIO PIO2_8 P2.8 */
+	PinCfg.Pinnum = 2;
+	PinCfg.Portnum = 2;
+	PINSEL_ConfigPin(&PinCfg);
+	GPIO_SetDir(2, (1 << 8), 1);
+
 	/* Initialize SW4 pin connect to GPIO P2.11 (EINT1)*/
 	PinCfg.Pinmode = 0;
 	PinCfg.OpenDrain = 0;
@@ -104,9 +110,11 @@ static void init_GPIO(void) {
 	PinCfg.Pinnum = 11;
 	PinCfg.Funcnum = 1;
 	PINSEL_ConfigPin(&PinCfg);
-	/* Initialize SW4 pin connect to GPIO P2.10 (EINT0) */
+	/* Initialize SW3 pin connect to GPIO P2.10 (EINT0) */
 	PinCfg.Pinnum = 10;
 	PINSEL_ConfigPin(&PinCfg);
+
+
 }
 
 //i2c enabler
@@ -359,10 +367,21 @@ void rgbLED_controller(void) {
 
 //sets the led arrays' leds
 void ledArray_controller(void) {
-	pca9532_setLeds(led_set, 0xFFFF); //moves onLed down array
-	led_set = led_mov_dir ? 0xAAAA : 0x5555;
 	led_mov_dir = !led_mov_dir;
+	led_set = led_mov_dir ? 0xAAAA : 0x0000;
+
+	pca9532_setLeds(led_set, 0xFFFF); //moves onLed down array
 	led_array_flag = 0;
+}
+
+//sets the Ext LED
+void extLED_controller() {
+
+	if(led_mov_dir) {
+		GPIO_SetValue(2, (1<< 8));
+	} else {
+		GPIO_ClearValue(2, 1<<8);
+	}
 }
 
 void EINT0_IRQHandler(void) {
@@ -639,11 +658,6 @@ void update_selectArrow_oled (void) {
 
 	oled_putString(2, 13 * (1+func_mode_selection), ">", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
-	switch(func_mode_selection) {
-
-
-	}
-
 	graphics_glitch_fix();
 }
 
@@ -735,6 +749,7 @@ void prep_passiveMode(void) {
 
 	//reset page
 	oled_page_state = 0;
+	func_mode_selection = 0;
 	func_change_flag = 1;
 
 	//reset RGB flag
@@ -776,6 +791,8 @@ void execute_function(void) {
 		notify_cems();
 		break;
 	case 2:
+		ledArray_controller();
+		extLED_controller();
 		break;
 	case 3:
 		break;
