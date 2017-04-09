@@ -224,7 +224,7 @@ void TIMER1_IRQHandler(void) {
 	LPC_TIM1 ->IR = isrMask; /* Clear the Interrupt Bit by writing to the register */// bitwise not
 
 	rgbLED_flag = 1;
-	rgbLED_controller();
+//	rgbLED_controller();
 
 	led_array_flag = 1;
 }
@@ -245,7 +245,7 @@ void TIMER2_IRQHandler(void) {
 	}
 
 	sseg_flag = 1;
-	sseg_controller(); // ! may be slow
+//	sseg_controller(); // ! may be slow
 }
 
 /*** SysTick helper functions ***/
@@ -678,18 +678,18 @@ int main(void) {
 			prep_monitorMode();
 		}
 
-//		//slower, delay but much less likely to crash
-//		if(rgbLED_flag) {
-//			rgbLED_controller();
-//
-//			rgbLED_flag = 0;
-//		}
-//
-//		if(sseg_flag) {
-//			sseg_controller();
-//
-//			sseg_flag = 0;
-//		}
+		//slower, delay but much less likely to crash
+		if(rgbLED_flag) {
+			rgbLED_controller();
+
+			rgbLED_flag = 0;
+		}
+
+		if(sseg_flag) {
+			sseg_controller();
+
+			sseg_flag = 0;
+		}
 
 		if (led_array_flag && ((rgbLED_mask & RGB_BLUE) >> 1) == 1) {
 			pca9532_setLeds(led_set, 0xFFFF);  //moves onLed down array
