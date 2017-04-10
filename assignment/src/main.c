@@ -16,7 +16,6 @@
 #include "light.h"
 #include "temp.h"
 
-
 #ifdef DEBUG_HEAT
 #define DEBUG_HEAT_OFFSET 200
 #endif
@@ -27,9 +26,8 @@
 #define SCREEN_CHG_DELAY 500
 #define TEMP_HIGH_WARNING 450
 
-
 /*** Message strings ***/
-unsigned char* STR_CEMS_ALERT = "User %s has requested for assistance.\n";
+unsigned char* STR_CEMS_ALERT = "User %s has requested for assistance.\r\n";
 unsigned char* STR_FIRE_ALERT = "Fire was Detected.\r\n";
 unsigned char* STR_DARK_ALERT = "Movement in darkness was Detected.\r\n";
 unsigned char* STR_MONITOR_MODE = "Entering MONITOR Mode.\r\n";
@@ -117,7 +115,7 @@ uint8_t tempStr[80];
 
 /*** Function mode params ***/
 volatile uint8_t func_mode_selection = 0; //0 - Siren, 1 - SOS to CEMS, 2 - Lights, 3 - $$$$$
-volatile uint8_t func_change_flag = 0;//init to 1 to set 1st arrow
+volatile uint8_t func_change_flag = 0; //init to 1 to set 1st arrow
 volatile uint8_t func_execute_flag = 0;
 
 /*** UART params ***/
@@ -128,12 +126,9 @@ volatile uint8_t font_size = 2;
 volatile uint8_t rotary_flag_0 = 0;
 volatile uint8_t rotary_flag_1 = 0;
 
-
-
 void rgbLED_controller(void);
 void sseg_controller(void);
 void prep_passiveMode();
-
 
 /*** protocols initialisers ***/
 static void init_GPIO(void) {
@@ -156,16 +151,15 @@ static void init_GPIO(void) {
 	PinCfg.Pinnum = 10;
 	PINSEL_ConfigPin(&PinCfg);
 
+	/* ---- Speaker ------> */
+	GPIO_SetDir(0, 1 << 27, 1);
+	GPIO_SetDir(0, 1 << 28, 1);
+	GPIO_SetDir(2, 1 << 13, 1);
 
-    /* ---- Speaker ------> */
-    GPIO_SetDir(0, 1<<27, 1);
-    GPIO_SetDir(0, 1<<28, 1);
-    GPIO_SetDir(2, 1<<13, 1);
-
-    GPIO_ClearValue(0, 1<<27); //LM4811-clk
-    GPIO_ClearValue(0, 1<<28); //LM4811-up/dn
-    GPIO_ClearValue(2, 1<<13); //LM4811-shutdn
-    /* <---- Speaker ------ */
+	GPIO_ClearValue(0, 1 << 27); //LM4811-clk
+	GPIO_ClearValue(0, 1 << 28); //LM4811-up/dn
+	GPIO_ClearValue(2, 1 << 13); //LM4811-shutdn
+	/* <---- Speaker ------ */
 }
 
 //i2c enabler
@@ -290,6 +284,14 @@ void TIMER1_IRQHandler(void) {
 
 	rgbLED_flag = 1;
 
+	//slower, delay but much less likely to crash
+	if (rgbLED_flag
+			&& ((((rgbLED_mask & RGB_BLUE) >> 1))
+					|| ((rgbLED_mask & RGB_RED) >> 0))) {
+		rgbLED_controller();
+		rgbLED_flag = 0;
+	}
+
 	led_array_flag = 1;
 }
 
@@ -389,7 +391,6 @@ void init_interrupts() {
 	*EXT_INT_Polarity_Register |= 0 << 0; // falling edge
 	*EXT_INT_Polarity_Register |= 0 << 1;
 
-
 	NVIC_ClearPendingIRQ(EINT0_IRQn);
 	NVIC_ClearPendingIRQ(EINT1_IRQn);
 	NVIC_ClearPendingIRQ(EINT3_IRQn);
@@ -421,7 +422,7 @@ void ledArray_controller(void) {
 
 //controls the siren output by the piezo speaker (non-blocking)
 void speaker_controller() {
-	if (getTicks() > oldSpeakerTicks ) {
+	if (getTicks() > oldSpeakerTicks) {
 		on_note = !on_note;
 
 		oldSpeakerTicks = getTicks();
@@ -436,15 +437,15 @@ void speaker_controller() {
 
 //sets the Ext LED
 void extLED_controller() {
-	if(leds_toggle_flag) {
-		GPIO_SetValue(2, (1<< 8));
+	if (leds_toggle_flag) {
+		GPIO_SetValue(2, (1 << 8));
 	} else {
-		GPIO_ClearValue(2, 1<<8);
+		GPIO_ClearValue(2, 1 << 8);
 	}
 }
 
 void EINT0_IRQHandler(void) {
-	if(oled_page_state == 6) {
+	if (oled_page_state == 6) {
 		func_execute_flag = 1;
 	}
 
@@ -488,8 +489,9 @@ void check_joystick(void) {
 	// Determine whether GPIO Interrupt P2.10 has occurred
 	if ((LPC_GPIOINT ->IO0IntStatF >> 15) & 0x1) {
 //		y++;
-		if(oled_page_state == 6) {
-			func_mode_selection = (func_mode_selection == 3 ? 0 : func_mode_selection + 1);
+		if (oled_page_state == 6) {
+			func_mode_selection = (
+					func_mode_selection == 3 ? 0 : func_mode_selection + 1);
 
 			func_change_flag = 1;
 		}
@@ -499,7 +501,8 @@ void check_joystick(void) {
 //		x++;
 
 		//ensure delay between screen changes
-		if((getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY) && mode_flag) {
+		if ((getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY)
+				&& mode_flag) {
 			reinit_screen_flag = 1;
 			oled_page_state = (oled_page_state + 1) % 7;
 
@@ -512,8 +515,9 @@ void check_joystick(void) {
 		LPC_GPIOINT ->IO0IntClr = 1 << 17;
 	}
 	if ((LPC_GPIOINT ->IO2IntStatF >> 3) & 0x1) {
-		if(oled_page_state == 6) {
-			func_mode_selection = (func_mode_selection == 0 ? 3 : func_mode_selection - 1);
+		if (oled_page_state == 6) {
+			func_mode_selection = (
+					func_mode_selection == 0 ? 3 : func_mode_selection - 1);
 
 			func_change_flag = 1;
 		}
@@ -522,7 +526,8 @@ void check_joystick(void) {
 	}
 	if ((LPC_GPIOINT ->IO2IntStatF >> 4) & 0x1) {
 //		x--;
-		if((getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY) && mode_flag) {
+		if ((getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY)
+				&& mode_flag) {
 			reinit_screen_flag = 1;
 			oled_page_state = (oled_page_state == 0 ? 6 : oled_page_state - 1);
 
@@ -564,7 +569,7 @@ void graphics_glitch_fix() {
 
 //prints empty labels and 'monitor' on oled
 void monitor_oled_init(void) {
-	oled_putString(1, 1, STR_MAIN_TITLE , OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(1, 1, STR_MAIN_TITLE, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_rect(0, 10, 95, 62, OLED_COLOR_WHITE);
 	oled_putString(2, 12, STR_MAIN_LUX, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_putString(2, 22, STR_MAIN_TEMP, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
@@ -576,27 +581,32 @@ void monitor_oled_init(void) {
 }
 
 void monitor_oled_temp(void) {
-	oled_putBigString(20, 1, STR_BIG_TEMP, OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(20, 1, STR_BIG_TEMP, OLED_COLOR_WHITE, OLED_COLOR_BLACK,
+			2);
 	graphics_glitch_fix();
 }
 
 void monitor_oled_light(void) {
-	oled_putBigString(30, 1, STR_BIG_LIGHT, OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(30, 1, STR_BIG_LIGHT, OLED_COLOR_WHITE, OLED_COLOR_BLACK,
+			2);
 	graphics_glitch_fix();
 }
 
 void monitor_oled_accX(void) {
-	oled_putBigString(15, 1, STR_BIG_ACCX, OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(15, 1, STR_BIG_ACCX, OLED_COLOR_WHITE, OLED_COLOR_BLACK,
+			2);
 	graphics_glitch_fix();
 }
 
 void monitor_oled_accY(void) {
-	oled_putBigString(15, 1, STR_BIG_ACCY, OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(15, 1, STR_BIG_ACCY, OLED_COLOR_WHITE, OLED_COLOR_BLACK,
+			2);
 	graphics_glitch_fix();
 }
 
 void monitor_oled_accZ(void) {
-	oled_putBigString(15, 1, STR_BIG_ACCZ, OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(15, 1, STR_BIG_ACCZ, OLED_COLOR_WHITE, OLED_COLOR_BLACK,
+			2);
 	graphics_glitch_fix();
 }
 
@@ -631,7 +641,7 @@ void displaySampledData_oled(void) {
 	oled_putString(35, 32, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	sprintf(tempStr, STR_INTVALUES_OUTPUT, accY - accInitY);
 	oled_putString(35, 42, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	sprintf(tempStr, STR_INTVALUES_OUTPUT, accZ - accInitZ);
+	sprintf(tempStr, STR_INTVALUES_OUTPUT, 64 + accZ - accInitZ);
 	oled_putString(35, 52, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
 	graphics_glitch_fix();
@@ -640,47 +650,53 @@ void displaySampledData_oled(void) {
 //helper functions to display values for diff screens
 void displayTempLarge_oled(void) {
 	sprintf(tempStr, STR_FLOATVALUES_OUTPUT, temperature_reading / 10.0);
-	oled_putBigString(15, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+	oled_putBigString(15, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK,
+			font_size);
 
 	graphics_glitch_fix();
 }
 
 void displayLightLarge_oled(void) {
 	sprintf(tempStr, STR_UINTVALUES_OUTPUT, light_reading);
-	oled_putBigString(25, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+	oled_putBigString(25, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK,
+			font_size);
 
 	graphics_glitch_fix();
 }
 
 void displayAccXLarge_oled(void) {
-	sprintf(tempStr, STR_INTVALUES_OUTPUT , accX - accInitX);
-	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+	sprintf(tempStr, STR_INTVALUES_OUTPUT, accX - accInitX);
+	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK,
+			font_size);
 
 	graphics_glitch_fix();
 }
 
 void displayAccYLarge_oled(void) {
-	sprintf(tempStr, STR_INTVALUES_OUTPUT , accY - accInitY);
-	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+	sprintf(tempStr, STR_INTVALUES_OUTPUT, accY - accInitY);
+	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK,
+			font_size);
 
 	graphics_glitch_fix();
 }
 
 void displayAccZLarge_oled(void) {
-	sprintf(tempStr, STR_INTVALUES_OUTPUT , accZ - accInitZ);
-	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK, font_size);
+	sprintf(tempStr, STR_INTVALUES_OUTPUT, 64 + accZ - accInitZ);
+	oled_putBigString(35, 27, tempStr, OLED_COLOR_WHITE, OLED_COLOR_BLACK,
+			font_size);
 
 	graphics_glitch_fix();
 }
 
-void update_selectArrow_oled (void) {
+void update_selectArrow_oled(void) {
 	//clear the previous arrow
-	oled_putString(2, 13 , STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_putString(2, 26 , STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_putString(2, 39 , STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_putString(2, 52 , STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 13, STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 26, STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 39, STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 52, STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
-	oled_putString(2, 13 * (1+func_mode_selection), STR_ARROW_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+	oled_putString(2, 13 * (1 + func_mode_selection), STR_ARROW_CHAR,
+			OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
 	graphics_glitch_fix();
 }
@@ -744,6 +760,8 @@ void prep_monitorMode(void) {
 	init_timer1();
 	init_timer2();
 
+	read_acc(&accInitX, &accInitY, &accInitZ);
+
 	monitor_oled_init();
 	sseg_controller();
 
@@ -758,8 +776,8 @@ void prep_passiveMode(void) {
 	timer2count = 0;						//reset 7 segment counter
 	rgb_setLeds(0x00);	//off RGB led
 	pca9532_setLeds(0x00, 0xFFFF); // off led_array
-	GPIO_ClearValue(2, 1<<8); //off ext LED
-    GPIO_ClearValue(0, 1 << 26); //off siren
+	GPIO_ClearValue(2, 1 << 8); //off ext LED
+	GPIO_ClearValue(0, 1 << 26); //off siren
 
 	//reset clocks
 	LPC_TIM1 ->TCR = (1 << 1);
@@ -788,7 +806,8 @@ void read_acc(int8_t* accX, int8_t* accY, int8_t* accZ) {
 	acc_read(accX, accY, accZ);
 
 	//check for movement and update accOld
-	if((*accX - accOldX > 5) || (*accY - accOldY > 5) || (*accZ - accOldZ > 5)) {
+	if ((*accX - accOldX > 5) || (*accY - accOldY > 5)
+			|| (*accZ - accOldZ > 5)) {
 		movement_detected_flag = 1;
 	}
 
@@ -812,7 +831,7 @@ void execute_function(void) {
 	switch (func_mode_selection) {
 	case 0:
 		speaker_on_flag = !speaker_on_flag;
-		if(!speaker_on_flag) {
+		if (!speaker_on_flag) {
 			GPIO_ClearValue(0, 1 << 26); //make sure speaker is off
 		}
 		break;
@@ -843,9 +862,10 @@ void transmitData() {
 
 	char string[50];
 
-	snprintf(string,50 , "%03d_-_T-%.2f_L-%d_AX.%d_AY.%d_AZ.%d\r\n",
+	snprintf(string, 50, "%03d_-_T-%.2f_L-%d_AX.%d_AY.%d_AZ.%d\r\n",
 			transmitCount++, temperature_reading / 10.0, light_reading,
-			(int) (accX - accInitX), (int) (accY - accInitY),(int) (accZ - accInitZ));
+			(int) (accX - accInitX), (int) (accY - accInitY),
+			(int) (accZ - accInitZ));
 
 	UART_SendString(LPC_UART3, &string);
 }
@@ -854,7 +874,7 @@ void transmitData() {
 void notify_cems() {
 	char string[50];
 
-	snprintf(string, 50, "User %s has requested for assistance.\n", userID);
+	snprintf(string, 50, STR_CEMS_ALERT, userID);
 
 	UART_SendString(LPC_UART3, &string);
 }
@@ -878,7 +898,6 @@ void initial_setup(int8_t* accInitX, int8_t* accInitY, int8_t* accInitZ) {
 	prep_passiveMode();
 }
 
-
 int main(void) {
 	initial_setup(&accInitX, &accInitY, &accInitZ);
 	//main execution loop
@@ -886,24 +905,25 @@ int main(void) {
 		//stable, passive mode
 		if (mode_flag == 0) {
 			prep_passiveMode();
-			while (mode_flag == 0); //wait for MONITOR to be enabled
+			while (mode_flag == 0)
+				; //wait for MONITOR to be enabled
 			prep_monitorMode();
 		}
 
-		//slower, delay but much less likely to crash
-		if (rgbLED_flag
-				&& ((((rgbLED_mask & RGB_BLUE) >> 1))
-						|| ((rgbLED_mask & RGB_RED) >> 0))) {
-			rgbLED_controller();
-			rgbLED_flag = 0;
-		}
-		if(sseg_flag) {
+//		//slower, delay but much less likely to crash
+//		if (rgbLED_flag
+//				&& ((((rgbLED_mask & RGB_BLUE) >> 1))
+//						|| ((rgbLED_mask & RGB_RED) >> 0))) {
+//			rgbLED_controller();
+//			rgbLED_flag = 0;
+//		}
+		if (sseg_flag) {
 			sseg_controller();
 			sseg_flag = 0;
 		}
 
 		//init the screens
-		if(reinit_screen_flag) {
+		if (reinit_screen_flag) {
 			reinit_oled();
 			reinit_screen_flag = 0;
 		}
@@ -947,13 +967,13 @@ int main(void) {
 		}
 
 		//execute function if selected
-		if(func_execute_flag) {
+		if (func_execute_flag) {
 			execute_function();
 			func_execute_flag = 0;
 		}
 
 		//drive piezo speaker for siren
-		if(speaker_on_flag) {
+		if (speaker_on_flag) {
 			speaker_controller();
 		}
 

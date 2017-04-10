@@ -160,8 +160,8 @@ writeData(uint8_t data)
 
 
 #else
-	// 7seg in timer2 uses SSP
-	NVIC_DisableIRQ(TIMER2_IRQn);
+//	// 7seg in timer2 uses SSP
+//	NVIC_DisableIRQ(TIMER2_IRQn);
 
     SSP_DATA_SETUP_Type xferConfig;
     OLED_DATA();
@@ -175,7 +175,7 @@ writeData(uint8_t data)
     //SSPSend( (uint8_t *)&data, 1 );
 
     OLED_CS_OFF();
-    NVIC_EnableIRQ(TIMER2_IRQn);
+//    NVIC_EnableIRQ(TIMER2_IRQn);
 #endif
 }
 
