@@ -16,8 +16,10 @@
 #include "light.h"
 #include "temp.h"
 
+#define DEBUG_HEAT
+
 #ifdef DEBUG_HEAT
-#define DEBUG_HEAT_OFFSET 200
+#define DEBUG_HEAT_OFFSET 190
 #endif
 #ifndef DEBUG_HEAT
 #define DEBUG_HEAT_OFFSET 0
@@ -461,14 +463,29 @@ void EINT1_IRQHandler(void) {
 	LPC_SC ->EXTINT = (1 << 1); /* Clear Interrupt Flag */
 }
 
+uint8_t acw = 0;
+uint8_t cw = 0;
+
 void check_rotary_switch(void) {
 	// GPIO interrupts on P0.24, P0.25
 	// Check if ANY of the edges detected
 	if ((LPC_GPIOINT ->IO0IntStatR >> 24) & 0x1) {
 		rotary_flag_0 = 1;
 		// channel 1 happened before channel 0
-		// clockwise
+		// anti-clockwise
 		if (rotary_flag_0 && rotary_flag_1) {
+
+			acw++;
+
+			if ((getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY)
+					&& mode_flag && (acw > 7)) {
+				reinit_screen_flag = 1;
+				oled_page_state = (oled_page_state == 0 ? 6 : oled_page_state - 1);
+
+				acw = 0;
+				lastScreenChangeTicks = getTicks();
+			}
+
 			rotary_flag_0 = 0;
 			rotary_flag_1 = 0;
 		}
@@ -476,8 +493,19 @@ void check_rotary_switch(void) {
 	} else if (((LPC_GPIOINT ->IO0IntStatR >> 25) & 0x1)) {
 		rotary_flag_1 = 1;
 		// channel 0 happened before channel 1
-		// anti-clockwise
+		// clockwise
 		if (rotary_flag_0 && rotary_flag_1) {
+			cw++;
+
+			if ((getTicks() > lastScreenChangeTicks + 2 * SCREEN_CHG_DELAY)
+					&& mode_flag && (cw > 7)) {
+				reinit_screen_flag = 1;
+				oled_page_state = (oled_page_state + 1) % 7;
+
+				cw = 0;
+				lastScreenChangeTicks = getTicks();
+			}
+
 			rotary_flag_0 = 0;
 			rotary_flag_1 = 0;
 		}
@@ -764,6 +792,10 @@ void prep_monitorMode(void) {
 
 	monitor_oled_init();
 	sseg_controller();
+
+	// sample sensors + update OLED
+	sample_sensors();
+	update_oled(oled_page_state);
 
 	UART_SendString(LPC_UART3, STR_MONITOR_MODE);
 }
