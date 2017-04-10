@@ -42,12 +42,19 @@ static uint8_t led_mov_dir = 0; // 0 for <<, 1 for >>
 /*** timer params ***/
 volatile uint32_t msTicks = 0; // counter for 1ms SysTicks
 uint32_t oldSampleTicks = 0;
+uint32_t oldSpeakerTicks = 0;
 
 /*** 7-segment display params ***/
 volatile uint8_t sseg_flag = 0;
 unsigned int timer2count = 0;
 int monitor_symbols[] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A',
 		'B', 'C', 'D', 'E', 'F' };
+
+/*** Speaker params ***/
+volatile uint8_t on_note = 0;
+uint8_t speaker_on_flag = 0;
+
+
 
 /*** ISL290003 light sensor params ***/
 uint32_t light_reading = 0;
@@ -62,8 +69,8 @@ volatile uint8_t movement_detected_flag = 0;
 volatile uint32_t lastMotionDetectedTicks = 0;
 
 /*** temperature sensor ***/
+#define TEMP_HIGH_WARNING 450
 int32_t temperature_reading = 0;
-const int32_t TEMP_HIGH_WARNING = 450;
 uint8_t temp_high_flag = 0;
 
 /*** stable, monitor mode flag ***/
@@ -115,6 +122,20 @@ static void init_GPIO(void) {
 	PINSEL_ConfigPin(&PinCfg);
 
 
+    /* ---- Speaker ------> */
+//    GPIO_SetDir(2, 1<<0, 1);
+//    GPIO_SetDir(2, 1<<1, 1);
+//    // Main tone signal : P0.26
+//    GPIO_SetDir(0, 1<<26, 1);
+
+    GPIO_SetDir(0, 1<<27, 1);
+    GPIO_SetDir(0, 1<<28, 1);
+    GPIO_SetDir(2, 1<<13, 1);
+
+    GPIO_ClearValue(0, 1<<27); //LM4811-clk
+    GPIO_ClearValue(0, 1<<28); //LM4811-up/dn
+    GPIO_ClearValue(2, 1<<13); //LM4811-shutdn
+    /* <---- Speaker ------ */
 }
 
 //i2c enabler
@@ -374,9 +395,30 @@ void ledArray_controller(void) {
 	led_array_flag = 0;
 }
 
+//controls the siren output by the piezo speaker (non-blocking)
+void speaker_controller() {
+//	if (getTicks() > oldSpeakerTicks + 20) {
+//		on_note = !on_note;
+//
+//		oldSpeakerTicks = getTicks();
+//
+//		if (on_note) {
+//			GPIO_SetValue(0, 1 << 26);
+//		} else {
+//			GPIO_ClearValue(0, 1 << 26);
+//		}
+//	}
+
+	GPIO_SetValue(0, 1 << 26);
+    Timer0_us_Wait(2551/2); // us timer
+
+    GPIO_ClearValue(0, 1 << 26);
+    Timer0_us_Wait(2551/2);
+
+}
+
 //sets the Ext LED
 void extLED_controller() {
-
 	if(led_mov_dir) {
 		GPIO_SetValue(2, (1<< 8));
 	} else {
@@ -397,6 +439,7 @@ void EINT0_IRQHandler(void) {
 
 }
 
+void prep_passiveMode();
 void EINT1_IRQHandler(void) {
 	printf("Button SW4 Liao\n");
 
@@ -458,7 +501,7 @@ void check_joystick(void) {
 //		x++;
 
 		//ensure delay between screen changes
-		if(getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY) {
+		if((getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY) && mode_flag) {
 			reinit_screen_flag = 1;
 			oled_page_state = (oled_page_state + 1) % 7;
 
@@ -485,7 +528,7 @@ void check_joystick(void) {
 	}
 	if ((LPC_GPIOINT ->IO2IntStatF >> 4) & 0x1) {
 //		x--;
-		if(getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY) {
+		if((getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY) && mode_flag) {
 			reinit_screen_flag = 1;
 			oled_page_state = (oled_page_state == 0 ? 6 : oled_page_state - 1);
 
@@ -733,7 +776,9 @@ void prep_passiveMode(void) {
 	led7seg_setChar(0x00, 0);			//off 7 segment
 	timer2count = 0;						//reset 7 segment counter
 	rgb_setLeds(0x00);	//off RGB led
-	pca9532_setLeds(0x00, 0xFFFF);
+	pca9532_setLeds(0x00, 0xFFFF); // off led_array
+	GPIO_ClearValue(2, 1<<8); //off ext LED
+    GPIO_ClearValue(0, 1 << 26); //off siren
 
 	//reset clocks
 	LPC_TIM1 ->TCR = (1 << 1);
@@ -746,6 +791,7 @@ void prep_passiveMode(void) {
 	temp_high_flag = 0;
 	detect_darkness_flag = 1;
 	movement_detected_flag = 0;
+	speaker_on_flag = 0;
 
 	//reset page
 	oled_page_state = 0;
@@ -786,6 +832,7 @@ void sample_sensors(void) {
 void execute_function(void) {
 	switch (func_mode_selection) {
 	case 0:
+		speaker_on_flag = !speaker_on_flag;
 		break;
 	case 1:
 		notify_cems();
@@ -853,6 +900,9 @@ void initial_setup(int8_t* accInitX, int8_t* accInitY, int8_t* accInitZ) {
 
 
 int main(void) {
+
+
+
 	initial_setup(&accInitX, &accInitY, &accInitZ);
 	//main execution loop
 	while (1) {
@@ -863,7 +913,9 @@ int main(void) {
 		}
 
 		//slower, delay but much less likely to crash
-		if(rgbLED_flag) {
+		if (rgbLED_flag
+				&& ((((rgbLED_mask & RGB_BLUE) >> 1))
+						|| ((rgbLED_mask & RGB_RED) >> 0))) {
 			rgbLED_controller();
 			rgbLED_flag = 0;
 		}
@@ -871,10 +923,6 @@ int main(void) {
 		if(sseg_flag) {
 			sseg_controller();
 			sseg_flag = 0;
-		}
-
-		if (led_array_flag && ((rgbLED_mask & RGB_BLUE) >> 1) == 1) {
-			ledArray_controller();
 		}
 
 		//init the screens
@@ -902,10 +950,16 @@ int main(void) {
 			rgbLED_mask |= RGB_RED;
 		}
 
-		//if low light detected
-		if(!detect_darkness_flag) {
-			if(movement_detected_flag) {
-				rgbLED_mask |= RGB_BLUE; //toggle blue led mask on
+		//if MOVEMENT_DETECTED
+		if (movement_detected_flag) {
+			//if no movement in darkness after set duration, disable movement flag
+			if (getTicks() > lastMotionDetectedTicks + 20) {
+				//check for prolonged movement detection, if so, set flag
+				if (!detect_darkness_flag) {
+					rgbLED_mask |= RGB_BLUE; //toggle blue led mask on
+				} else {
+					movement_detected_flag = 0;
+				}
 			}
 		}
 
@@ -923,18 +977,12 @@ int main(void) {
 			func_execute_flag = 0;
 		}
 
-//		//if MOVEMENT_DETECTED
-//		if (movement_detected_flag) {
-//			//if no movement in darkness after set duration, disable movement flag
-//			if (getTicks() > lastMotionDetectedTicks + 20) {
-//				//check for prolonged movement detection, if so, set flag
-//				if (!detect_darkness_flag) {
-//					rgbLED_mask |= RGB_BLUE; //toggle blue led mask on
-//				} else {
-//					movement_detected_flag = 0;
-//				}
-//			}
-//		}
+		//drive piezo speaker for siren
+		if(speaker_on_flag) {
+			speaker_controller();
+		}
+
+
 
 		//if need to transmit
 		if (send_message_flag) {
