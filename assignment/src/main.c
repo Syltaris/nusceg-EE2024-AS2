@@ -397,23 +397,23 @@ void ledArray_controller(void) {
 
 //controls the siren output by the piezo speaker (non-blocking)
 void speaker_controller() {
-//	if (getTicks() > oldSpeakerTicks + 20) {
-//		on_note = !on_note;
-//
-//		oldSpeakerTicks = getTicks();
-//
-//		if (on_note) {
-//			GPIO_SetValue(0, 1 << 26);
-//		} else {
-//			GPIO_ClearValue(0, 1 << 26);
-//		}
-//	}
+	if (getTicks() > oldSpeakerTicks ) {
+		on_note = !on_note;
 
-	GPIO_SetValue(0, 1 << 26);
-    Timer0_us_Wait(2551/2); // us timer
+		oldSpeakerTicks = getTicks();
 
-    GPIO_ClearValue(0, 1 << 26);
-    Timer0_us_Wait(2551/2);
+		if (on_note) {
+			GPIO_SetValue(0, 1 << 26);
+		} else {
+			GPIO_ClearValue(0, 1 << 26);
+		}
+	}
+
+//	GPIO_SetValue(0, 1 << 26);
+//    Timer0_us_Wait(2551/2); // us timer
+//
+//    GPIO_ClearValue(0, 1 << 26);
+//    Timer0_us_Wait(2551/2);
 
 }
 
@@ -445,9 +445,9 @@ void EINT1_IRQHandler(void) {
 
 	mode_flag = !mode_flag;
 
-	if(!mode_flag) {
-		prep_passiveMode();
-	}
+//	if(!mode_flag) {
+//		prep_passiveMode();
+//	}
 
 	NVIC_ClearPendingIRQ(EINT1_IRQn);
 	LPC_SC ->EXTINT = (1 << 1); /* Clear Interrupt Flag */
@@ -560,16 +560,16 @@ void EINT3_IRQHandler(void) {
 
 		printf("light triggered\n");
 	}
-	// Determine if GPIO Interrupt P0.3 has occurred (MMA7455 Accelerometer)
-	if ((LPC_GPIOINT ->IO0IntStatR >> 3) & 0x1) {
-		movement_detected_flag = 1;
-
-		lastMotionDetectedTicks = getTicks();
-
-		LPC_GPIOINT ->IO0IntClr = 1 << 3;
-		acc_intClr();
-		printf("acc triggered\n");
-	}
+//	// Determine if GPIO Interrupt P0.3 has occurred (MMA7455 Accelerometer)
+//	if ((LPC_GPIOINT ->IO0IntStatR >> 3) & 0x1) {
+//		movement_detected_flag = 1;
+//
+//		lastMotionDetectedTicks = getTicks();
+//
+//		LPC_GPIOINT ->IO0IntClr = 1 << 3;
+//		acc_intClr();
+//		printf("acc triggered\n");
+//	}
 
 	check_rotary_switch();
 	check_joystick();
@@ -908,6 +908,7 @@ int main(void) {
 	while (1) {
 		//stable, passive mode
 		if (mode_flag == 0) {
+			prep_passiveMode();
 			while (mode_flag == 0); //wait for MONITOR to be enabled
 			prep_monitorMode();
 		}
