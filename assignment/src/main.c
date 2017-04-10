@@ -924,8 +924,8 @@ void initial_setup(int8_t* accInitX, int8_t* accInitY, int8_t* accInitZ) {
 	light_setIrqInCycles(LIGHT_CYCLE_1);
 	light_enable(); //enable light sensor
 	oled_clearScreen(OLED_COLOR_BLACK); //clear oled
-	read_acc(accInitX, accInitY, accInitZ);
 	acc_init();
+	read_acc(accInitX, accInitY, accInitZ);
 
 	prep_passiveMode();
 }
