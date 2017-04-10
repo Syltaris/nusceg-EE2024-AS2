@@ -25,6 +25,8 @@
 #endif
 
 #define SCREEN_CHG_DELAY 500
+#define TEMP_HIGH_WARNING 450
+
 
 /*** Message strings ***/
 unsigned char* STR_CEMS_ALERT = "User %s has requested for assistance.\n";
@@ -52,18 +54,23 @@ unsigned char* STR_MAIN_ACCY = "ACCY: ";
 unsigned char* STR_MAIN_ACCZ = "ACCZ: ";
 unsigned char* STR_MAIN_TITLE = "MODE: MONITOR";
 
+unsigned char* STR_BIG_TEMP = "TEMP   ";
+unsigned char* STR_BIG_LIGHT = "LUX   ";
+unsigned char* STR_BIG_ACCX = "ACC X  ";
+unsigned char* STR_BIG_ACCY = "ACC Y  ";
+unsigned char* STR_BIG_ACCZ = "ACC Z  ";
+
 /*** device/user id ***/
 const char* userID = "EE2024";
 
 /*** LED params ***/
 static uint8_t rgbLED_mask = 0x00;
 static uint8_t rgbLED_set = 0x03;
-
-static uint32_t led_set = 0x0001; //for array
 static volatile uint8_t rgbLED_flag = 0;
 
+static uint32_t led_set = 0x0001; //for array
 static volatile uint8_t led_array_flag = 0;
-static uint8_t led_mov_dir = 0; // 0 for <<, 1 for >>
+static uint8_t leds_toggle_flag = 0;
 
 /*** timer params ***/
 volatile uint32_t msTicks = 0; // counter for 1ms SysTicks
@@ -80,8 +87,6 @@ int monitor_symbols[] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A',
 volatile uint8_t on_note = 0;
 uint8_t speaker_on_flag = 0;
 
-
-
 /*** ISL290003 light sensor params ***/
 uint32_t light_reading = 0;
 uint8_t movement_lowLight_flag = 0;
@@ -95,7 +100,6 @@ volatile uint8_t movement_detected_flag = 0;
 volatile uint32_t lastMotionDetectedTicks = 0;
 
 /*** temperature sensor ***/
-#define TEMP_HIGH_WARNING 450
 int32_t temperature_reading = 0;
 uint8_t temp_high_flag = 0;
 
@@ -124,6 +128,11 @@ volatile uint8_t font_size = 2;
 volatile uint8_t rotary_flag_0 = 0;
 volatile uint8_t rotary_flag_1 = 0;
 
+
+
+void rgbLED_controller(void);
+void sseg_controller(void);
+void prep_passiveMode();
 
 
 /*** protocols initialisers ***/
@@ -273,7 +282,6 @@ static void init_timer2() {
 
 }
 
-void rgbLED_controller(void);
 void TIMER1_IRQHandler(void) {
 	unsigned int isrMask;
 
@@ -285,7 +293,6 @@ void TIMER1_IRQHandler(void) {
 	led_array_flag = 1;
 }
 
-void sseg_controller(void);
 void TIMER2_IRQHandler(void) {
 	unsigned int isrMask;
 
@@ -407,11 +414,9 @@ void rgbLED_controller(void) {
 
 //sets the led arrays' leds
 void ledArray_controller(void) {
-	led_mov_dir = !led_mov_dir;
-	led_set = led_mov_dir ? 0xAAAA : 0x0000;
+	led_set = leds_toggle_flag ? 0xAAAA : 0x0000;
 
 	pca9532_setLeds(led_set, 0xFFFF); //moves onLed down array
-	led_array_flag = 0;
 }
 
 //controls the siren output by the piezo speaker (non-blocking)
@@ -431,7 +436,7 @@ void speaker_controller() {
 
 //sets the Ext LED
 void extLED_controller() {
-	if(led_mov_dir) {
+	if(leds_toggle_flag) {
 		GPIO_SetValue(2, (1<< 8));
 	} else {
 		GPIO_ClearValue(2, 1<<8);
@@ -448,15 +453,12 @@ void EINT0_IRQHandler(void) {
 
 }
 
-void prep_passiveMode();
 void EINT1_IRQHandler(void) {
 	mode_flag = !mode_flag;
 
 	NVIC_ClearPendingIRQ(EINT1_IRQn);
 	LPC_SC ->EXTINT = (1 << 1); /* Clear Interrupt Flag */
 }
-
-
 
 void check_rotary_switch(void) {
 	// GPIO interrupts on P0.24, P0.25
@@ -574,27 +576,27 @@ void monitor_oled_init(void) {
 }
 
 void monitor_oled_temp(void) {
-	oled_putBigString(20, 1, "TEMP ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(20, 1, STR_BIG_TEMP, OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 	graphics_glitch_fix();
 }
 
 void monitor_oled_light(void) {
-	oled_putBigString(30, 1, "LUX  ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(30, 1, STR_BIG_LIGHT, OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 	graphics_glitch_fix();
 }
 
 void monitor_oled_accX(void) {
-	oled_putBigString(15, 1, "ACC X ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(15, 1, STR_BIG_ACCX, OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 	graphics_glitch_fix();
 }
 
 void monitor_oled_accY(void) {
-	oled_putBigString(15, 1, "ACC Y ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(15, 1, STR_BIG_ACCY, OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 	graphics_glitch_fix();
 }
 
 void monitor_oled_accZ(void) {
-	oled_putBigString(15, 1, "ACC Z ", OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
+	oled_putBigString(15, 1, STR_BIG_ACCZ, OLED_COLOR_WHITE, OLED_COLOR_BLACK, 2);
 	graphics_glitch_fix();
 }
 
@@ -771,11 +773,11 @@ void prep_passiveMode(void) {
 	detect_darkness_flag = 1;
 	movement_detected_flag = 0;
 	speaker_on_flag = 0;
+	func_change_flag = 0;
 
 	//reset page
 	oled_page_state = 0;
 	func_mode_selection = 0;
-	func_change_flag = 1;
 
 	//reset RGB flag
 	rgbLED_mask = 0x00;
@@ -810,11 +812,15 @@ void execute_function(void) {
 	switch (func_mode_selection) {
 	case 0:
 		speaker_on_flag = !speaker_on_flag;
+		if(!speaker_on_flag) {
+			GPIO_ClearValue(0, 1 << 26); //make sure speaker is off
+		}
 		break;
 	case 1:
 		notify_cems();
 		break;
 	case 2:
+		leds_toggle_flag = !leds_toggle_flag;
 		ledArray_controller();
 		extLED_controller();
 		break;
@@ -891,7 +897,6 @@ int main(void) {
 			rgbLED_controller();
 			rgbLED_flag = 0;
 		}
-
 		if(sseg_flag) {
 			sseg_controller();
 			sseg_flag = 0;
@@ -936,11 +941,9 @@ int main(void) {
 		}
 
 		//if at func mode screen
-		if(oled_page_state == 6) {
-			if(func_change_flag) {
-				update_selectArrow_oled();
-				func_change_flag = 0;
-			}
+		if (func_change_flag && oled_page_state == 6) {
+			update_selectArrow_oled();
+			func_change_flag = 0;
 		}
 
 		//execute function if selected
