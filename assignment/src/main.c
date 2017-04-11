@@ -478,7 +478,7 @@ void check_rotary_switch(void) {
 			acw++;
 
 			if ((getTicks() > lastScreenChangeTicks + SCREEN_CHG_DELAY)
-					&& mode_flag && (acw > 7)) {
+					&& mode_flag && (acw > 10)) {
 				reinit_screen_flag = 1;
 				oled_page_state = (oled_page_state == 0 ? 6 : oled_page_state - 1);
 
@@ -498,7 +498,7 @@ void check_rotary_switch(void) {
 			cw++;
 
 			if ((getTicks() > lastScreenChangeTicks + 2 * SCREEN_CHG_DELAY)
-					&& mode_flag && (cw > 7)) {
+					&& mode_flag && (cw > 10)) {
 				reinit_screen_flag = 1;
 				oled_page_state = (oled_page_state + 1) % 7;
 
@@ -519,7 +519,7 @@ void check_joystick(void) {
 //		y++;
 		if (oled_page_state == 6) {
 			func_mode_selection = (
-					func_mode_selection == 3 ? 0 : func_mode_selection + 1);
+					func_mode_selection == 2 ? 0 : func_mode_selection + 1);
 
 			func_change_flag = 1;
 		}
@@ -545,7 +545,7 @@ void check_joystick(void) {
 	if ((LPC_GPIOINT ->IO2IntStatF >> 3) & 0x1) {
 		if (oled_page_state == 6) {
 			func_mode_selection = (
-					func_mode_selection == 0 ? 3 : func_mode_selection - 1);
+					func_mode_selection == 0 ? 2 : func_mode_selection - 1);
 
 			func_change_flag = 1;
 		}
@@ -645,13 +645,11 @@ void monitor_oled_func(void) {
 	oled_rect(0, 10, 95, 23, OLED_COLOR_WHITE);
 	oled_rect(0, 23, 95, 36, OLED_COLOR_WHITE);
 	oled_rect(0, 36, 95, 49, OLED_COLOR_WHITE);
-	oled_rect(0, 49, 95, 62, OLED_COLOR_WHITE);
 
 	//selection text
 	oled_putString(9, 13, STR_FUNC_1, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_putString(9, 27, STR_FUNC_2, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_putString(9, 39, STR_FUNC_3, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_putString(9, 52, STR_FUNC_4, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
 	update_selectArrow_oled();
 
@@ -721,7 +719,6 @@ void update_selectArrow_oled(void) {
 	oled_putString(2, 13, STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_putString(2, 26, STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 	oled_putString(2, 39, STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-	oled_putString(2, 52, STR_BLANK_CHAR, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
 	oled_putString(2, 13 * (1 + func_mode_selection), STR_ARROW_CHAR,
 			OLED_COLOR_WHITE, OLED_COLOR_BLACK);
